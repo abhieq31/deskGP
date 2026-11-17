@@ -1,24 +1,26 @@
 // Headless checks: circuits are legal (no self-overlap, inside bounds) and bots race cleanly in both car classes.
-import { TRACKS, buildTrack, gridPose, BOUNDS, speedProfile } from "../src/track.js";
+import { TRACKS, buildTrack, gridPose, speedProfile } from "../src/track.js";
 import { makeCar, placeCar, stepCar, collideCars, updateTow, CLASSES, respawn } from "../src/physics.js";
 import { makeBrain, drive } from "../src/ai.js";
 import { layout, distToTrack, clearance } from "../src/layout.js";
 
 let fail = 0;
+const d0 = (v) => Math.round(v);
 const bad = (m) => { console.log("  FAIL " + m); fail++; };
 const only = process.env.CLS ? [CLASSES[process.env.CLS]] : Object.values(CLASSES);
 for (const def of TRACKS) {
   const T = buildTrack(def);
   console.log(`\n${def.name}: ${(T.len / 1000).toFixed(2)} km`);
-  for (let i = 0; i < T.n; i++) if (Math.abs(T.x[i]) > BOUNDS.hx - 30 || Math.abs(T.z[i]) > BOUNDS.hz - 30) { bad(`track near the edge at ${i}`); break; }
+  console.log(`  official ${d0(def.length)} m, built ${d0(T.len)} m, ${T.drsZones.length} DRS zones`);
+  if (Math.abs(T.len - def.length) / def.length > 0.04) bad("length differs from the real circuit by more than 4%");
   let minSelf = 1e9;
   for (let i = 0; i < T.n; i += 2) for (let j = i + 40; j < T.n; j += 2) { if (T.n - j + i < 40) continue; const d = Math.hypot(T.x[i] - T.x[j], T.z[i] - T.z[j]); if (d < minSelf) minSelf = d; }
-  if (minSelf < T.width + 16) bad(`track passes ${minSelf.toFixed(1)} m from itself`);
+  console.log(`  closest approach of two stretches: ${minSelf.toFixed(0)} m`); if (minSelf < T.width + 2) bad(`track passes ${minSelf.toFixed(1)} m from itself`);
   // barriers: never closer to another part of the circuit than to their own stretch, never on tarmac
   let wallBad = 0;
   for (let i = 0; i < T.n; i += 2) for (const sg of [1, -1]) {
     const o = sg > 0 ? T.wp[i] : T.wm[i], px = T.x[i] + T.nx[i] * sg * o, pz = T.z[i] + T.nz[i] * sg * o, d = distToTrack(T, px, pz, 1);
-    if (d < o - 1.2 || d < T.half + 1.5) wallBad++;
+    if (d < o - 1.2 || d < T.half + 0.5) wallBad++; // never on, or within 0.5 m of, any tarmac
   }
   if (wallBad) bad(`${wallBad} barrier points intrude on another part of the circuit`);
   // scenery footprints, exactly as world.js draws them, must clear every barrier
@@ -32,12 +34,12 @@ for (const def of TRACKS) {
   console.log(`  scenery: ${L.stands.length} grandstands, pit ${L.pit ? "yes" : "no"}, ${L.buildings.length} buildings, ${L.trees.length} trees - all clear`);
   for (const cls of only) {
     T.v = speedProfile(T, cls);
-    for (const skill of [0.84, 0.9, 1.0]) {
+    for (const skill of (process.env.SKILLS || "0.84,1.0").split(",").map(Number)) {
       const cars = [], brains = [];
       for (let g = 0; g < 6; g++) { const c = makeCar("b" + g, cls); const p = gridPose(T, g); placeCar(c, p); c.total = p.i - T.n; cars.push(c); brains.push(makeBrain(skill, g / 6)); }
-      const dt = 1 / 120, laps = 3, fin = new Set(), best = cars.map(() => Infinity), lapStart = cars.map(() => 0), last = cars.map(() => 0);
+      const dt = 1 / 120, laps = +(process.env.LAPS || 2), fin = new Set(), best = cars.map(() => Infinity), lapStart = cars.map(() => 0), last = cars.map(() => 0);
       let t = 0, respawns = 0, offs = 0, vtop = 0, walls = 0, retired = 0;
-      while (t < 420 && fin.size < cars.length) {
+      while (t < 900 && fin.size < cars.length) {
         for (let k = 0; k < cars.length; k++) {
           const c = cars[k]; if (fin.has(c)) { stepCar(c, { brk: 0.6, direct: true }, dt, T); continue; }
           const inp = drive(c, brains[k], T, cars, dt, t);

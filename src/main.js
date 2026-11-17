@@ -1,5 +1,5 @@
 // DeskGP: game loop, sporting rules, lobby, HUD, netcode glue.
-import { TRACKS, buildTrack, gridPose, wrap, BOUNDS, speedProfile } from "./track.js";
+import { TRACKS, buildTrack, outlineOf, gridPose, wrap, speedProfile } from "./track.js";
 import { makeCar, placeCar, stepCar, collideCars, updateTow, respawn, clamp, CLASSES } from "./physics.js";
 import { makeBrain, drive, DRIVERS, DIFFS, codeOf } from "./ai.js";
 import { createWorld } from "./world.js";
@@ -27,11 +27,13 @@ const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], sound: true, g
 const savePrefs = () => store.set("prefs3", prefs);
 const me = { id: newId(), name: prefs.name || "", color: prefs.color, num: prefs.num || 0, joined: Date.now() };
 
-const tracks = TRACKS.map(buildTrack);
+// circuits are built when first raced (a 7 km circuit takes a moment); menus use cheap outlines
+const built = [];
+const track = (i) => built[i] || (built[i] = buildTrack(TRACKS[i]));
 const world = createWorld($("#gl"));
 if (prefs.gfx !== "auto") world.setQuality(prefs.gfx);
 const audio = createAudio(); audio.muted = !prefs.sound;
-window.__deskgp = { world, tracks, get S() { return S; } };
+window.__deskgp = { world, track, get S() { return S; } };
 
 const S = { screen: "menu", room: null, race: null, boss: false, paused: false, clockOff: 0, clockRtt: 1e9, joinedAt: 0 };
 const netNow = () => performance.now() + S.clockOff;
@@ -159,7 +161,7 @@ $("#join").onclick = () => {
 };
 
 // ---------- room / lobby ----------
-function defaultCfg() { return Object.assign({ track: 0, laps: 5, bots: 7, diff: 1, cls: "gt" }, store.get("cfg4", {}), { dmg: 1, quali: false }); }
+function defaultCfg() { const c = Object.assign({ track: 0, laps: 3, bots: 7, diff: 1, cls: "gt" }, store.get("cfg5", {}), { dmg: 1, quali: false }); if (!(c.track < TRACKS.length)) c.track = 0; return c; }
 function enterRoom(code, creator) {
   leaveNet();
   me.joined = creator || !code ? 1 : Date.now();
@@ -192,19 +194,19 @@ function isHost() {
 function sendLob(to) { const R = S.room; if (!R?.net || !isHost()) return; R.gotLob = true; R.net.send({ t: "lob", cfg: R.cfg, points: R.points, raceN: R.raceN, phase: R.phase, go: R.phase === "race" ? R.go : null }, { reliable: true, to }); }
 setInterval(() => { const R = S.room; if (!R?.net) return; if (isHost()) sendLob(); else R.net.send({ t: "pi", a: performance.now() }, { to: hostId() }); if (S.screen === "lobby") renderLobby(); }, 2000);
 
-function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; store.set("cfg4", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
+function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; store.set("cfg5", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
 function seg(el, items, cur, onPick) {
   el.innerHTML = items.map(([v, label]) => `<button data-v='${JSON.stringify(v)}' class="${v === cur ? "on" : ""}">${label}</button>`).join("");
   el.onclick = (e) => { const v = e.target.dataset.v; if (v != null) onPick(JSON.parse(v)); };
 }
 function drawMini(cv, T, dots) {
-  const g = cv.getContext("2d"), w = cv.width, h = cv.height, sc = Math.min((w - 16) / (BOUNDS.hx * 2), (h - 16) / (BOUNDS.hz * 2));
+  const g = cv.getContext("2d"), w = cv.width, h = cv.height, B = T.box, sc = Math.min((w - 16) / (B.hx * 2), (h - 16) / (B.hz * 2));
   const X = (x) => w / 2 + x * sc, Z = (z) => h / 2 + z * sc;
   g.clearRect(0, 0, w, h); g.lineJoin = g.lineCap = "round";
   g.beginPath(); for (let i = 0; i < T.n; i += 3) g.lineTo(X(T.x[i]), Z(T.z[i])); g.closePath();
   g.strokeStyle = "rgba(0,0,0,.6)"; g.lineWidth = w / 34; g.stroke(); g.strokeStyle = "#e9edf5"; g.lineWidth = w / 60; g.stroke();
   g.strokeStyle = "#2fe37a"; g.lineWidth = w / 60;
-  for (const [a, b] of T.def.drs) { g.beginPath(); for (let i = Math.floor(a * T.n); i < b * T.n; i += 3) g.lineTo(X(T.x[i]), Z(T.z[i])); g.stroke(); }
+  for (const [a, b] of T.drsRuns || []) { g.beginPath(); for (let i = a; i < b; i += 3) { const j = wrap(i, T.n); g.lineTo(X(T.x[j]), Z(T.z[j])); } g.stroke(); }
   g.fillStyle = "#e10600"; g.fillRect(X(T.x[0]) - 2, Z(T.z[0]) - w / 50, 4, w / 25);
   if (dots) for (const d of dots) { g.beginPath(); g.arc(X(d.x), Z(d.z), d.me ? w / 44 : w / 62, 0, 6.3); g.fillStyle = d.color; g.fill(); if (d.me) { g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke(); } }
 }
@@ -221,17 +223,17 @@ function renderLobby() {
   $("#netstat").textContent = R.solo ? "" : !n.relaysUp ? "Connecting to the matchmaking relays…" : mem.length === 1 ? "Waiting for drivers. Send them the code or the link." : `${mem.length} drivers connected`;
   const tk = $("#tracks");
   if (!tk.childElementCount) {
-    tk.innerHTML = tracks.map((T, i) => `<button class="trk" data-i="${i}"><canvas width="240" height="150"></canvas><b>${T.def.name}</b><small>${(T.len / 1000).toFixed(2)} km · ${T.def.street ? "street" : "permanent"} · ${T.def.mood}</small></button>`).join("");
+    tk.innerHTML = TRACKS.map((d, i) => `<button class="trk" data-i="${i}"><canvas width="240" height="150"></canvas><b>${d.name}</b><small>${d.country} \u00b7 ${(d.length / 1000).toFixed(3)} km${d.street ? " \u00b7 street" : ""}${d.mood === "night" ? " \u00b7 night" : ""}</small></button>`).join("");
     tk.insertAdjacentHTML("afterend", `<p id="trkblurb"></p>`);
-    tk.querySelectorAll("canvas").forEach((cv, i) => drawMini(cv, tracks[i]));
+    tk.querySelectorAll("canvas").forEach((cv, i) => drawMini(cv, outlineOf(TRACKS[i])));
     tk.onclick = (e) => { const b = e.target.closest(".trk"); if (b) setCfg("track", +b.dataset.i); };
   }
   tk.querySelectorAll(".trk").forEach((b, i) => b.classList.toggle("on", i === R.cfg.track));
-  const pb = store.get(`pb3:${tracks[R.cfg.track].id}:${R.cfg.cls}`, null);
-  $("#trkblurb").textContent = tracks[R.cfg.track].def.blurb + (pb ? ` Your best lap: ${fmt(pb.t)}.` : "");
+  const pb = store.get(`pb3:${TRACKS[R.cfg.track].id}:${R.cfg.cls}`, null);
+  $("#trkblurb").textContent = `${TRACKS[R.cfg.track].full}. ${TRACKS[R.cfg.track].blurb}` + (pb ? ` Your best lap: ${fmt(pb.t)}.` : "");
   const pick = (k) => (v) => setCfg(k, v);
   seg($("#o-cls"), [["gt", "Electric GT"], ["f1", "Formula"]], R.cfg.cls, pick("cls"));
-  seg($("#o-laps"), [[3, "3 laps"], [5, "5"], [8, "8"], [12, "12"]], R.cfg.laps, pick("laps"));
+  seg($("#o-laps"), [[1, "1 lap"], [3, "3"], [5, "5"], [10, "10"]], R.cfg.laps, pick("laps"));
   seg($("#o-bots"), [0, 3, 5, 7, 9].map((b) => [b, String(b)]), R.cfg.bots, pick("bots"));
   seg($("#o-diff"), DIFFS.map((d, i) => [i, d.name]), R.cfg.diff, pick("diff"));
   const mine = (k, v) => { prefs[k] = v; savePrefs(); audio.fx("click"); renderLobby(); };
@@ -288,8 +290,8 @@ function onMsg(from, m) {
 function endRace() { S.race = null; world.clearCars(); world.setRacingLine(null); }
 function startDemo(force) {
   if (S.race && !S.race.demo) return;
-  const ti = S.room ? S.room.cfg.track : Math.floor(Math.random() * tracks.length), cls = S.room ? S.room.cfg.cls : "gt";
-  if (!force && S.race?.demo && S.race.T === tracks[ti] && S.race.cls.id === cls) return;
+  const ti = S.room ? S.room.cfg.track : Math.floor(Math.random() * TRACKS.length), cls = S.room ? S.room.cfg.cls : "gt";
+  if (!force && S.race?.demo && S.race.T === built[ti] && S.race.cls.id === cls) return;
   const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], color: d[2], num: NUMS[d[1]], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
   startRace({ mode: "race", at: netNow() - 9000, hold: 0, cfg: { track: ti, laps: 9999, cls, dmg: 1 }, grid, n: -1 }, true);
 }
@@ -297,7 +299,7 @@ function owns(e) { return e.id === me.id || (e.kind === "b" && (S.race.demo || i
 
 function startRace(go, demo) {
   endRace();
-  const T = tracks[go.cfg.track], cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
+  const T = track(go.cfg.track), cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
   T.v = speedProfile(T, cls);
   if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; }
   audio.mode = cls.id === "f1" ? "v6" : "ev";
@@ -389,10 +391,13 @@ function onLap(e, lt, rt, fin, remote, inv) {
     e.fin = true; e.finT = rt; if (race.firstFin == null && !race.quali) { race.firstFin = rt; if (!race.demo) raceControl("CHEQUERED FLAG", true, true); }
   }
   if (e === race.mine && !remote) {
-    if (fastest && timed && e.lapsDone > 1) { toast(`FASTEST LAP ${fmt(lt)}`, "p"); audio.fx("best"); }
-    else if (pbLap && timed) { toast(`PERSONAL BEST ${fmt(lt)}`, "g"); audio.fx("lap"); }
-    else if (timed) { toast(`Lap ${fmt(lt)}`); audio.fx("lap"); }
+    // every lap tells you exactly where you stand against your all-time best on this circuit and car
     const key = `pb3:${race.T.id}:${race.cls.id}`, old = store.get(key, null);
+    if (timed && e.lapsDone > 1 || !race.quali) {
+      if (inv) toast(`Lap ${fmt(lt)} \u00b7 not counted (four wheels off)`);
+      else if (!old || lt < old.t) { toast(old ? `PERSONAL BEST ${fmt(lt)} \u00b7 \u2212${(old.t - lt).toFixed(3)}` : `PERSONAL BEST ${fmt(lt)}`, "p"); audio.fx("best"); }
+      else { toast(`Lap ${fmt(lt)} \u00b7 +${(lt - old.t).toFixed(3)} to your best`, lt - old.t < 0.5 ? "g" : ""); audio.fx("lap"); }
+    }
     if (ok && e.rec.length > 20 && (!old || lt < old.t)) { store.set(key, { t: lt, rec: e.rec, prof: e.prof }); race.pb = { t: lt, rec: e.rec, prof: e.prof }; }
     e.rec = []; e.prof = []; e.recT = 0;
     if (!race.quali && !fin && e.lapsDone === race.laps - 1) setTimeout(() => big("FINAL LAP"), 300);
@@ -459,6 +464,7 @@ function simStep(race, now) {
     if (!green) { c.steer += (clamp(inp.steer, -1, 1) - c.steer) * 0.2; c.thr = inp.thr; continue; }
     const wasDrs = c.drs;
     stepCar(c, inp, DT, T, { damage: race.demo ? 0 : dmg });
+    if (c.tl && c.speed > 12 && c.respawned <= 0 && c.total > 0) e.inv = true; // a cut lap simply doesn't count as a record
     if (e === race.mine && c.drs && !wasDrs) audio.fx("drs");
     if (race.demo) { c.hits.length = 0; } else flushHits(race, e);
     // retirement
@@ -628,7 +634,7 @@ function updateHud(race, dt, now) {
   }
   // minimap
   const gx = $("#map").getContext("2d"); gx.clearRect(0, 0, 440, 300); if (mapBase) gx.drawImage(mapBase, 0, 0);
-  const sc = Math.min((440 - 16) / (BOUNDS.hx * 2), (300 - 16) / (BOUNDS.hz * 2));
+  const sc = Math.min((440 - 16) / (T.box.hx * 2), (300 - 16) / (T.box.hz * 2));
   for (let i = race.order.length - 1; i >= 0; i--) {
     const e = race.order[i]; if (e.hide) continue; const mine = e === view, x = 220 + e.c.x * sc, y = 150 + e.c.z * sc;
     gx.beginPath(); gx.arc(x, y, mine ? 9 : 6, 0, 6.3); gx.fillStyle = e.color; gx.fill(); gx.lineWidth = mine ? 3 : 1.5; gx.strokeStyle = mine ? "#fff" : "rgba(0,0,0,.7)"; gx.stroke();

@@ -1,36 +1,19 @@
 // Track geometry: closed spline -> uniform samples, racing line, speed profile, lookups.
 // Plane coordinates are (x, z). Heading h: forward = (cos h, sin h). "Right" = (-sin h, cos h).
 
-// Units are metres. The circuits fit in a 1040 x 660 m box.
-export const BOUNDS = { hx: 520, hz: 330 };
-export const DESK = BOUNDS;
+// Units are metres. The circuits are real F1 layouts (see circuits.js).
+import { CIRCUITS } from "./circuits.js";
 export const STEP = 2;
-export const TRACKS = [
-  {
-    id: "silverline", name: "Silverline Circuit", mood: "day", width: 14, country: "GB",
-    blurb: "Fast and flowing. A long pit straight, a sweeping back section and one tight loop to get wrong.",
-    pts: [[-260, 178], [0, 182], [240, 178], [345, 150], [385, 70], [350, -10], [270, -45], [180, -20], [90, -60], [-10, -25],
-      [-120, -60], [-200, -130], [-250, -215], [-340, -235], [-410, -170], [-390, -80], [-320, -20], [-400, 50], [-410, 130], [-340, 180]],
-    drs: [[0.0, 0.2]],
-  },
-  {
-    id: "harbour", name: "Harbour Lights Street Circuit", mood: "night", width: 13, street: true, country: "SG",
-    blurb: "Night street race. Concrete walls a metre from the white line, city towers all round, no room for mistakes.",
-    pts: [[-150, 205], [80, 210], [250, 200], [330, 235], [420, 215], [440, 130], [370, 80], [300, 10], [380, -60], [440, -150],
-      [380, -240], [280, -250], [230, -170], [160, -120], [70, -160], [20, -250], [-70, -270], [-110, -190], [-40, -110], [-60, -40],
-      [-160, -60], [-250, -120], [-340, -250], [-430, -230], [-440, -120], [-380, -40], [-420, 60], [-380, 160], [-280, 190]],
-    drs: [[0.0, 0.11]],
-  },
-  {
-    id: "ridge", name: "Sunset Ridge", mood: "sunset", width: 15, country: "US",
-    blurb: "Golden hour. Two long DRS straights, two hairpins, and a lot of slipstream.",
-    pts: [[-330, 255], [0, 262], [330, 255], [440, 215], [455, 120], [380, 80], [290, 120], [200, 160], [140, 95], [200, 20],
-      [330, -20], [440, -80], [450, -200], [360, -270], [180, -275], [0, -200], [-180, -275], [-360, -270], [-450, -190], [-430, -80],
-      [-320, -40], [-200, -70], [-110, -20], [-170, 60], [-290, 80], [-420, 60], [-460, 150], [-430, 230]],
-    drs: [[0.0, 0.16], [0.48, 0.6]],
-  },
-];
-
+export const TRACKS = CIRCUITS;
+const boxOf = (xs, zs) => { let hx = 0, hz = 0; for (let i = 0; i < xs.length; i++) { hx = Math.max(hx, Math.abs(xs[i])); hz = Math.max(hz, Math.abs(zs[i])); } return { hx: hx + 40, hz: hz + 40 }; };
+// Cheap outline for menus and minimaps (no racing line, no barriers).
+export function outlineOf(def) {
+  if (def._outline) return def._outline;
+  const P = def.pts, m = P.length, x = [], z = [];
+  for (let i = 0; i < m; i++) for (let j = 0; j < 6; j++) { const q = catmull(P[wrap(i - 1, m)], P[i], P[wrap(i + 1, m)], P[wrap(i + 2, m)], j / 6); x.push(q[0]); z.push(q[1]); }
+  const n = x.length, o = { def, x, z, n, box: boxOf(x, z), drsIdx: null };
+  return (def._outline = o);
+}
 
 function catmull(p0, p1, p2, p3, t) {
   // centripetal Catmull-Rom (Barry-Goldman)
@@ -124,20 +107,43 @@ export function buildTrack(def) {
 
   T.vc = {};
 
-  // zones
+  // DRS zones: on the circuit's longest straights (def.drs = how many), from 80 m in to 60 m before the end
   T.drs = new Uint8Array(n);
-  for (const [a, b] of def.drs || []) for (let i = Math.floor(a * n); i < Math.floor(b * n); i++) T.drs[wrap(i, n)] = 1;
+  let zones = Array.isArray(def.drs) ? def.drs.map(([a, b]) => [Math.floor(a * n), Math.floor(b * n)]) : [];
+  if (!Array.isArray(def.drs)) {
+    const find = (kmax, minLen) => {
+      const straight = (i) => Math.abs(T.k[i]) < kmax, runs = [];
+      let st = 0; while (straight(st) && st < n) st++; // begin scanning just after a corner
+      let run = -1;
+      for (let k = 1; k <= n; k++) { const i = wrap(st + k, n); if (straight(i)) { if (run < 0) run = k; } else if (run >= 0) { runs.push([st + run, st + k - 1]); run = -1; } }
+      runs.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]));
+      return runs.slice(0, def.drs || 1).filter(([a, b]) => (b - a) * STEP > minLen).map(([a, b]) => [a + 40, b - 30]);
+    };
+    zones = find(0.0032, 300);
+    if (!zones.length) zones = find(0.007, 220); // a curving street "straight", like Monaco's
+  }
+  for (const [a, b] of zones) for (let i = a; i < b; i++) T.drs[wrap(i, n)] = 1;
+  T.drsRuns = zones;
   // barrier offsets each side (pulled in on the inside of tight corners so the wall never folds over itself)
-  const wp = new Float32Array(n), wm = new Float32Array(n), WALL = def.street ? T.half + 3.6 : 21;
+  const wp = new Float32Array(n), wm = new Float32Array(n), WALL = def.street ? T.half + (def.wall ?? 3.6) : 21;
   for (let i = 0; i < n; i++) {
     const kk = T.k[i], inner = Math.max(Math.min(WALL, T.half + 5), Math.min(WALL, 0.72 / (Math.abs(kk) + 1e-6)));
     wp[i] = kk > 0 ? inner : WALL; wm[i] = kk < 0 ? inner : WALL;
   }
   // Never let a barrier come closer to any other part of the circuit than to its own: where two stretches of track
   // run close together (or a corner is tight), pull the wall in so it can never cross tarmac or fold over itself.
+  const CELL = 24, grid = new Map(), key = (cx, cz) => cx * 100003 + cz;
+  for (let j = 0; j < n; j += 2) { const k = key(Math.floor(x[j] / CELL), Math.floor(z[j] / CELL)); let l = grid.get(k); if (!l) grid.set(k, (l = [])); l.push(j); }
+  T.near = (px, pz, r, fn) => { const r2 = Math.ceil(r / CELL), cx = Math.floor(px / CELL), cz = Math.floor(pz / CELL); for (let a = -r2; a <= r2; a++) for (let b = -r2; b <= r2; b++) { const l = grid.get(key(cx + a, cz + b)); if (l) for (const j of l) if (fn(j) === false) return false; } return true; };
+  // distance to the nearest centreline sample (searches outwards; exact within `max`)
+  T.dist = (px, pz, max = 400) => {
+    let best = Infinity;
+    for (let r = CELL; r <= max + CELL; r *= 2) { T.near(px, pz, r, (j) => { const d = (px - x[j]) ** 2 + (pz - z[j]) ** 2; if (d < best) best = d; }); if (best < (r - CELL) * (r - CELL)) break; }
+    return Math.min(Math.sqrt(best), max + 1e-3 + (best === Infinity ? 1e9 : 0));
+  };
   const geo = (o, i, sgn) => {
-    let lo = T.half + 2.2, hi = o;
-    const ok = (d) => { const px = x[i] + T.nx[i] * sgn * d, pz = z[i] + T.nz[i] * sgn * d; for (let j = 0; j < n; j += 2) { const dx = px - x[j], dz = pz - z[j]; if (dx * dx + dz * dz < (d - 0.6) * (d - 0.6)) return false; } return true; };
+    let lo = T.half + (def.street ? 1.2 : 2.2), hi = o;
+    const ok = (d) => { const px = x[i] + T.nx[i] * sgn * d, pz = z[i] + T.nz[i] * sgn * d, lim = (d - 0.6) * (d - 0.6); return T.near(px, pz, d, (j) => (px - x[j]) ** 2 + (pz - z[j]) ** 2 >= lim); };
     if (ok(hi)) return hi;
     for (let k = 0; k < 7; k++) { const m = (lo + hi) / 2; if (ok(m)) lo = m; else hi = m; }
     return lo;
@@ -145,10 +151,12 @@ export function buildTrack(def) {
   const gp = new Float32Array(n), gm = new Float32Array(n);
   for (let i = 0; i < n; i++) { gp[i] = geo(wp[i], i, 1); gm[i] = geo(wm[i], i, -1); }
   T.wp = smoothCyclic(gp, 6, 2); T.wm = smoothCyclic(gm, 6, 2);
-  for (let i = 0; i < n; i++) { T.wp[i] = Math.max(T.half + 2.2, Math.min(T.wp[i], gp[i])); T.wm[i] = Math.max(T.half + 2.2, Math.min(T.wm[i], gm[i])); }
+  const wmin = T.half + (def.street ? 1.2 : 2.2);
+  for (let i = 0; i < n; i++) { T.wp[i] = Math.max(wmin, Math.min(T.wp[i], gp[i])); T.wm[i] = Math.max(wmin, Math.min(T.wm[i], gm[i])); }
   T.wallMax = Math.max(...T.wp, ...T.wm);
   // DRS: one detection point 120 m before each activation zone
-  T.drsZones = (def.drs || []).map(([a, b]) => ({ a: wrap(Math.floor(a * n), n), b: wrap(Math.floor(b * n), n), det: wrap(Math.floor(a * n) - 60, n) }));
+  T.drsZones = zones.map(([a, b]) => ({ a: wrap(a, n), b: wrap(b, n), det: wrap(a - 60, n) }));
+  T.box = boxOf(x, z);
   T.sector = (i) => Math.min(2, Math.floor(wrap(i, n) / n * 3));
   T.heading = (i) => Math.atan2(T.tz[i], T.tx[i]);
   return T;

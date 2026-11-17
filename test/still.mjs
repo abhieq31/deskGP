@@ -7,7 +7,7 @@ const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
 p.setDefaultTimeout(240000);
 p.on("pageerror", (e) => console.log("[pageerror]", e.message, (e.stack || "").split("\n")[1]));
 p.on("console", (m) => { if (m.type() === "error" && !/WebSocket/.test(m.text())) console.log("[error]", m.text().slice(0, 200)); });
-await p.addInitScript(([g, c]) => { localStorage.setItem("deskgp:prefs3", JSON.stringify({ name: "Abhi", gfx: +g, cam: +c, sound: false })); localStorage.setItem("deskgp:cfg4", JSON.stringify({ track: 0, laps: 3, bots: 7, diff: 1, cls: "gt" })); }, [gfx, cams.split(",")[0]]);
+await p.addInitScript(([g, c]) => { localStorage.setItem("deskgp:prefs3", JSON.stringify({ name: "Abhi", gfx: +g, cam: +c, sound: false })); localStorage.setItem("deskgp:cfg4", JSON.stringify({ track: 0, laps: 3, bots: 7, diff: 1, cls: "gt" })); localStorage.setItem("deskgp:cfg5", JSON.stringify({ track: 0, laps: 3, bots: 7, diff: 1, cls: "gt" })); }, [gfx, cams.split(",")[0]]);
 await p.goto("file://" + path.resolve("deskgp.html"));
 await p.waitForTimeout(1500);
 await p.click("#solo"); await p.waitForTimeout(800);

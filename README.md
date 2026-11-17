@@ -6,7 +6,8 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 
 ## What is in it
 
-- **Three circuits**: Silverline Circuit (day, permanent circuit with gravel traps and tyre walls), Harbour Lights Street Circuit (night, concrete walls lining the track, city towers, the harbour), Sunset Ridge (golden hour, painted run-off, hills).
+- **Six real Grand Prix circuits**, built from their actual centrelines at full scale: Monza, Silverstone, Spa-Francorchamps, Monaco, Marina Bay (at night) and Interlagos. Real lengths (within 1%), real start/finish lines, race direction, DRS on the longest straights.
+- **Your record is the opponent**: every lap shows the gap to your all-time best on that circuit and car; a lap with four wheels off simply doesn't count as a record. Sector times go purple, green or yellow.
 - **Two car classes**: Electric GT (instant torque, regen when you lift) and Formula (more downforce, a V6 note, eight gears, DRS flap).
 - **Grand Prix format, without the paperwork**: five red lights with a random hold and your reaction time, DRS in the zones when you are within one second of the car ahead, the chequered flag (once the leader finishes, everyone finishes at their next crossing), and points 25-18-15-12-10-8-6-4-2-1. No penalties, no flags to obey.
 - **Damage you can see**: dents where you hit, and splitters, mirrors, wings and endplates that break off and stay on the track.
@@ -45,8 +46,8 @@ node test/feel.mjs  # how fast the car responds to a key press
 
 Source is in `src/`: `track.js` (circuits, racing line, speed profiles, barriers), `layout.js` (where scenery may go), `physics.js` (car model, damage), `ai.js` (AI drivers), `world.js` (three.js scene, cars, post-processing), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (sporting rules, lobby, HUD).
 
-Driver names on the AI grid are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams or drivers.
+Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits.
 
 ## Licence
 
-MIT. Uses [three.js](https://threejs.org) (MIT) and [noble-curves](https://github.com/paulmillr/noble-curves) (MIT).
+MIT. Uses [three.js](https://threejs.org) (MIT) and [noble-curves](https://github.com/paulmillr/noble-curves) (MIT). Circuit centrelines come from [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT, (c) Tomislav Bacinger); `tools/make-circuits.mjs` regenerates `src/circuits.js` from it.

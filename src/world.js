@@ -194,7 +194,8 @@ export function createWorld(canvas) {
   }
   const decal = (o) => std({ roughness: 0.9, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...o });
   const flat = (w, d, mat, x, z, rot, y) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.set(-Math.PI / 2, 0, -rot); m.position.set(x, y, z); m.receiveShadow = true; return m; };
-  function distToTrack(T, x, z, step = 4) { let b = 1e12; for (let i = 0; i < T.n; i += step) { const d = (x - T.x[i]) ** 2 + (z - T.z[i]) ** 2; if (d < b) b = d; } return Math.sqrt(b); }
+  const distToTrack = (T, x, z) => T.dist(x, z, 600);
+  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70 };
   const hillNoise = (x, z) => Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0053 + 0.4) * 0.6 + Math.sin(x * 0.011 + z * 0.007) * 0.25 + Math.sin(x * 0.023 - z * 0.019 + 2) * 0.1 + 0.55;
   const wallOff = (T, s) => (i) => s * (s > 0 ? T.wp[i] : T.wm[i]);
 
@@ -229,7 +230,7 @@ export function createWorld(canvas) {
       if (!on && run >= 0) {
         if (i - run > 5) {
           const a = Math.max(0, run - 8), b = Math.min(T.n, i + 8), mid = Math.floor((run + i) / 2), out = T.k[wrap(mid, T.n)] > 0 ? -1 : 1;
-          for (const s of [-1, 1]) { const km = new THREE.Mesh(ribbon(T, a, b, s * (T.half - 0.3), s * (T.half + 1.6), 0.05, T.step / 5), kerbMat); km.receiveShadow = true; G.add(km); }
+          for (const s of [-1, 1]) { const km = new THREE.Mesh(ribbon(T, a, b, s * (T.half - 0.3), (j) => s * Math.min(T.half + 1.6, wallOff(T, s)(j) * s - 0.3), 0.05, T.step / 5), kerbMat); km.receiveShadow = true; G.add(km); }
           if (!street) { const gm = new THREE.Mesh(ribbon(T, Math.max(0, run - 14), Math.min(T.n, i + 24), out * (T.half + 1.6), (j) => wallOff(T, out)(j) - out * 0.3, 0.012, T.step / 9), runMat); gm.receiveShadow = true; G.add(gm); }
           tyreRuns.push([Math.max(0, run - 6), Math.min(T.n - 1, i + 18), out]);
         }
@@ -327,7 +328,12 @@ export function createWorld(canvas) {
         g.fillStyle = ["#0b1020", "#111827", "#0f172a"][seed]; g.fillRect(0, 0, w, h);
         for (let y = 6; y < h; y += 12) for (let x = 6; x < w; x += 12) { const lit = Math.random() < 0.42; g.fillStyle = lit ? `rgba(255,${rnd(200, 240)},${rnd(140, 200)},${rnd(0.6, 1)})` : "rgba(40,60,90,0.5)"; g.fillRect(x, y, 7, 7); }
       }, { repeat: [1, 1] });
-      const kinds = [0, 1, 2].map((k) => { const t = winTex(k); t.repeat.set(2, [3, 6, 10][k]); return new THREE.MeshStandardMaterial({ color: 0x8090a8, map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0.5 }); });
+      const dayTex = (seed) => canvasTex(128, 256, (g, w, h) => { // Riviera facades: cream, ochre, terracotta, with shuttered windows
+        g.fillStyle = ["#e9dcc3", "#e3c08f", "#d9a07a", "#f1ece2"][(seed + Math.floor(Math.random() * 4)) % 4]; g.fillRect(0, 0, w, h);
+        for (let y = 8; y < h; y += 14) for (let x = 8; x < w; x += 16) { g.fillStyle = "rgba(40,50,60,.75)"; g.fillRect(x, y, 7, 9); g.fillStyle = "rgba(60,110,80,.55)"; g.fillRect(x - 2, y, 2, 9); g.fillRect(x + 7, y, 2, 9); }
+      }, { repeat: [1, 1] });
+      const night = id === "night";
+      const kinds = [0, 1, 2].map((k) => { const t = night ? winTex(k) : dayTex(k); t.repeat.set(2, [3, 6, 10][k]); return new THREE.MeshStandardMaterial({ color: night ? 0x8090a8 : 0xffffff, map: t, emissive: night ? 0xffffff : 0x000000, emissiveMap: night ? t : null, emissiveIntensity: night ? 0.9 : 0, roughness: night ? 0.4 : 0.75, metalness: night ? 0.5 : 0.05 }); });
       const cells = [[], [], []];
       for (const [x, z, w, d, h, k] of L.buildings) cells[k].push([x, z, w, d, h]);
       cells.forEach((list, k) => {
@@ -337,7 +343,7 @@ export function createWorld(canvas) {
       });
       const signs = cells[2].slice(0, 14);
       signs.forEach(([x, z, w, d, h], i) => { const t = canvasTex(256, 64, (g, cw, ch) => { g.fillStyle = "#000"; g.fillRect(0, 0, cw, ch); g.fillStyle = ["#ff2d55", "#00e5ff", "#ffd60a", "#7cff4f"][i % 4]; g.font = "italic 900 40px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(BRANDS[i % BRANDS.length], cw / 2, ch / 2); }); const s = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.9, w * 0.22), new THREE.MeshBasicMaterial({ map: t, toneMapped: false, side: THREE.DoubleSide })); s.position.set(x, h + w * 0.14, z); s.rotation.y = Math.atan2(-x, -z); G.add(s); });
-      const water = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000), std({ color: 0x0a1628, roughness: 0.08, metalness: 0.9, envMapIntensity: 1.2 })); water.rotation.x = -Math.PI / 2; water.position.set(0, -0.15, -2100); G.add(water);
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(8000, 4000), std({ color: night ? 0x0a1628 : 0x1d5f86, roughness: 0.08, metalness: 0.8, envMapIntensity: 1.2 })); water.rotation.x = -Math.PI / 2; water.position.set(0, -0.15, T.box.hz + 80 + 2000); G.add(water);
       // street lights along the circuit
       const lp = []; for (let i = 0; i < T.n; i += 18) for (const s of [-1, 1]) lp.push([i, s]);
       const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.14, 9, 6), std({ color: 0x3a3d44, metalness: 0.7, roughness: 0.4 }), lp.length), lamp = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 0.25, 0.5), new THREE.MeshBasicMaterial({ color: 0xfff2d8, toneMapped: false }), lp.length);
@@ -345,18 +351,19 @@ export function createWorld(canvas) {
       G.add(pole, lamp);
     } else {
       // rolling hills beyond the circuit
-      const tg = new THREE.PlaneGeometry(3400, 2800, 120, 100); tg.rotateX(-Math.PI / 2);
+      const B = T.box, TW = B.hx * 2 + 2600, TD = B.hz * 2 + 2600, HH = HILLS[T.id] ?? 55;
+      const tg = new THREE.PlaneGeometry(TW, TD, Math.round(TW / 26), Math.round(TD / 26)); tg.rotateX(-Math.PI / 2);
       const p = tg.attributes.position;
       for (let k = 0; k < p.count; k++) {
-        const x = p.getX(k), z = p.getZ(k), d = distToTrack(T, x, z, 8), edge = Math.max(Math.abs(x) / 1700, Math.abs(z) / 1400);
-        let hgt = clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * (id === "sunset" ? 85 : 55) + 8);
+        const x = p.getX(k), z = p.getZ(k), d = distToTrack(T, x, z), edge = Math.max(Math.abs(x) / (TW / 2), Math.abs(z) / (TD / 2));
+        let hgt = clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * HH + 8);
         for (const [kx, kz, kr] of keepOut) if (Math.hypot(x - kx, z - kz) < kr + 30) hgt = 0;
         p.setY(k, hgt * clamp((1 - edge) * 6, 0, 1) - 0.03);
       }
       tg.computeVertexNormals();
-      const tt = grassTex(m, false); tt.repeat.set(220, 180);
+      const tt = grassTex(m, false); tt.repeat.set(TW / 15, TD / 15);
       const terr = new THREE.Mesh(tg, std({ map: tt, roughness: 1, envMapIntensity: 0.12 })); terr.receiveShadow = true; G.add(terr);
-      W.heightAt = (x, z) => { const d = distToTrack(T, x, z, 8); return clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * (id === "sunset" ? 85 : 55) + 8); };
+      W.heightAt = (x, z) => { const d = distToTrack(T, x, z); return clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * HH + 8); };
       const pts = L.trees.filter(([x, z]) => !keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + 8)).map(([x, z, s, r]) => [x, z, W.heightAt(x, z), s, r]);
       const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), std({ color: 0x5b4030, roughness: 1 }), pts.length);
       const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2, 1), std({ color: id === "sunset" ? 0x5d7a2f : 0x3d7c36, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);

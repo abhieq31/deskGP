@@ -1,0 +1,88 @@
+// All sound is synthesised: no audio files to download.
+import { gearOf, rpmOf } from "./physics.js";
+
+export function createAudio() {
+  const A = { muted: false, ready: false };
+  let ctx, master, eng, others = [], skid, wind, noiseBuf;
+
+  function engineVoice(pan) {
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), p = ctx.createStereoPanner();
+    o1.type = "sawtooth"; o2.type = "square"; f.type = "lowpass"; f.Q.value = 2; g.gain.value = 0;
+    const g2 = ctx.createGain(); g2.gain.value = 0.5;
+    o1.connect(f); o2.connect(g2); g2.connect(f); f.connect(g); g.connect(p); p.connect(master); p.pan.value = pan || 0;
+    o1.start(); o2.start();
+    return { o1, o2, g, f, p };
+  }
+  function setVoice(v, speed, thr, vol) {
+    const t = ctx.currentTime, rpm = rpmOf(speed), g = gearOf(speed), base = 70 + rpm * 250 + g * 6;
+    v.o1.frequency.setTargetAtTime(base, t, 0.03); v.o2.frequency.setTargetAtTime(base * 0.5, t, 0.03);
+    v.f.frequency.setTargetAtTime(500 + rpm * 2600 * (0.4 + 0.6 * thr), t, 0.05);
+    v.g.gain.setTargetAtTime(vol * (0.35 + 0.65 * thr), t, 0.05);
+  }
+  function noiseLoop(type, freq, q) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.value = 0; s.connect(f); f.connect(g); g.connect(master); s.start();
+    return { g, f };
+  }
+
+  A.init = function () {
+    if (A.ready) { ctx.resume?.(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    ctx = new AC(); master = ctx.createGain(); master.gain.value = A.muted ? 0 : 0.5;
+    const comp = ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    eng = engineVoice(0); others = [engineVoice(-0.5), engineVoice(0.5), engineVoice(0)];
+    skid = noiseLoop("bandpass", 1900, 6); wind = noiseLoop("lowpass", 500, 0.5);
+    A.ready = true;
+  };
+  A.setMuted = function (m) { A.muted = m; if (A.ready) master.gain.setTargetAtTime(m ? 0 : 0.5, ctx.currentTime, 0.02); };
+
+  // me: {speed, thr, slip, boosting} | null ; near: [{d, speed, thr, pan}]
+  A.frame = function (me, near) {
+    if (!A.ready) return;
+    const t = ctx.currentTime;
+    if (me) {
+      setVoice(eng, me.speed, me.thr, 0.11);
+      skid.g.gain.setTargetAtTime(Math.min(0.16, Math.max(0, me.slip - 0.25) * 0.2), t, 0.04);
+      wind.g.gain.setTargetAtTime(Math.min(0.2, me.speed / 95 * 0.16), t, 0.1); wind.f.frequency.setTargetAtTime(300 + me.speed * 14, t, 0.1);
+    } else { eng.g.gain.setTargetAtTime(0, t, 0.1); skid.g.gain.setTargetAtTime(0, t, 0.1); wind.g.gain.setTargetAtTime(0, t, 0.1); }
+    for (let i = 0; i < others.length; i++) {
+      const o = near && near[i];
+      if (o) { setVoice(others[i], o.speed * (1 + o.dop * 0.05), o.thr, 0.075 / (1 + o.d * o.d / 500)); others[i].p.pan.setTargetAtTime(o.pan, t, 0.05); }
+      else others[i].g.gain.setTargetAtTime(0, t, 0.1);
+    }
+  };
+
+  function tone(freq, dur, type = "sine", vol = 0.2, when = 0, slide = 0) {
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + when;
+    o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function burst(dur, freq, vol, slide = 1) {
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(), g = ctx.createGain(), t = ctx.currentTime;
+    f.type = "bandpass"; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(freq * slide, t + dur); f.Q.value = 1.2;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random()); s.stop(t + dur + 0.05);
+  }
+  const FX = {
+    light: () => tone(440, 0.16, "square", 0.12),
+    go: () => { tone(880, 0.55, "square", 0.16); tone(1320, 0.5, "sine", 0.1); },
+    click: () => tone(660, 0.05, "triangle", 0.1),
+    boost: () => burst(0.7, 500, 0.3, 6),
+    pad: () => { burst(0.4, 900, 0.25, 4); tone(520, 0.25, "sawtooth", 0.08, 0, 2.2); },
+    bump: (a = 1) => { burst(0.14, 160, 0.5 * a, 0.5); tone(90, 0.12, "sine", 0.3 * a, 0, 0.5); },
+    lap: () => [660, 880, 1100].forEach((f, i) => tone(f, 0.16, "triangle", 0.13, i * 0.08)),
+    best: () => [660, 880, 1100, 1320, 1760].forEach((f, i) => tone(f, 0.2, "triangle", 0.15, i * 0.07)),
+    pass: () => { tone(740, 0.08, "triangle", 0.13); tone(1110, 0.14, "triangle", 0.13, 0.07); },
+    lost: () => tone(300, 0.18, "triangle", 0.1, 0, 0.7),
+    win: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, 0.28, "triangle", 0.16, i * 0.12)),
+    finish: () => [523, 659, 784].forEach((f, i) => tone(f, 0.3, "triangle", 0.14, i * 0.12)),
+    fall: () => tone(700, 0.9, "sine", 0.14, 0, 0.15),
+    emote: () => tone(990, 0.07, "sine", 0.1),
+    splash: () => burst(0.35, 1400, 0.2, 0.4),
+  };
+  A.fx = function (name, a) { if (!A.ready || A.muted) return; try { FX[name]?.(a); } catch {} };
+  return A;
+}

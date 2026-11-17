@@ -1,0 +1,18 @@
+{
+  "name": "deskgp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DeskGP - tiny open-wheel racing across an office desk. Multiplayer by room code, bots for solo.",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "test": "node test/sim.mjs"
+  },
+  "devDependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0"
+  }
+}

@@ -33,7 +33,7 @@ for (const p of pages) await p.keyboard.press("KeyB");
 await host.screenshot({ path: out + "/mp-race-host.png" }); await guests[0].screenshot({ path: out + "/mp-race-guest.png" });
 for (const p of pages) await p.keyboard.press("KeyB");
 const t1 = Date.now(); let done = false;
-while (Date.now() - t1 < 110000) { await host.waitForTimeout(2000); const s = await Promise.all(pages.map((p) => p.evaluate(() => window.__deskgp.S.screen))); if (s.every((x) => x === "results")) { done = true; break; } }
+while (Date.now() - t1 < +(process.env.WAIT || 110000)) { await host.waitForTimeout(2000); const s = await Promise.all(pages.map((p) => p.evaluate(() => window.__deskgp.S.screen))); if (s.every((x) => x === "results")) { done = true; break; } }
 console.log("all reached results:", done);
 for (const p of pages) await p.keyboard.press("KeyB");
 for (const [i, p] of pages.entries()) console.log(`p${i} result:`, (await p.evaluate(() => [...document.querySelectorAll("#res-table .rr")].map((r) => r.innerText.replace(/\s+/g, " ")).join(" | "))));

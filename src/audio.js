@@ -7,17 +7,17 @@ export function createAudio() {
 
   function engineVoice(pan) {
     const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), p = ctx.createStereoPanner();
-    o1.type = "sawtooth"; o2.type = "square"; f.type = "lowpass"; f.Q.value = 2; g.gain.value = 0;
-    const g2 = ctx.createGain(); g2.gain.value = 0.5;
+    o1.type = "triangle"; o2.type = "sine"; f.type = "lowpass"; f.Q.value = 1; g.gain.value = 0;
+    const g2 = ctx.createGain(); g2.gain.value = 0.35;
     o1.connect(f); o2.connect(g2); g2.connect(f); f.connect(g); g.connect(p); p.connect(master); p.pan.value = pan || 0;
     o1.start(); o2.start();
     return { o1, o2, g, f, p };
   }
-  function setVoice(v, speed, thr, vol) {
-    const t = ctx.currentTime, rpm = rpmOf(speed), g = gearOf(speed), base = 70 + rpm * 250 + g * 6;
-    v.o1.frequency.setTargetAtTime(base, t, 0.03); v.o2.frequency.setTargetAtTime(base * 0.5, t, 0.03);
-    v.f.frequency.setTargetAtTime(500 + rpm * 2600 * (0.4 + 0.6 * thr), t, 0.05);
-    v.g.gain.setTargetAtTime(vol * (0.35 + 0.65 * thr), t, 0.05);
+  function setVoice(v, speed, thr, vol) { // electric drivetrain: a rising motor whine, louder under load
+    const t = ctx.currentTime, base = 140 + speed * 21;
+    v.o1.frequency.setTargetAtTime(base, t, 0.04); v.o2.frequency.setTargetAtTime(base * 2.01, t, 0.04);
+    v.f.frequency.setTargetAtTime(900 + speed * 40, t, 0.05);
+    v.g.gain.setTargetAtTime(vol * (0.25 + 0.75 * thr) * (0.5 + Math.min(1, speed / 60) * 0.5), t, 0.06);
   }
   function noiseLoop(type, freq, q) {
     const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
@@ -43,9 +43,9 @@ export function createAudio() {
     if (!A.ready) return;
     const t = ctx.currentTime;
     if (me) {
-      setVoice(eng, me.speed, me.thr, 0.11);
+      setVoice(eng, me.speed, me.thr, 0.09);
       skid.g.gain.setTargetAtTime(Math.min(0.16, Math.max(0, me.slip - 0.25) * 0.2), t, 0.04);
-      wind.g.gain.setTargetAtTime(Math.min(0.2, me.speed / 95 * 0.16), t, 0.1); wind.f.frequency.setTargetAtTime(300 + me.speed * 14, t, 0.1);
+      wind.g.gain.setTargetAtTime(Math.min(0.3, me.speed / 95 * 0.26), t, 0.1); wind.f.frequency.setTargetAtTime(300 + me.speed * 14, t, 0.1);
     } else { eng.g.gain.setTargetAtTime(0, t, 0.1); skid.g.gain.setTargetAtTime(0, t, 0.1); wind.g.gain.setTargetAtTime(0, t, 0.1); }
     for (let i = 0; i < others.length; i++) {
       const o = near && near[i];

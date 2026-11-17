@@ -5,7 +5,7 @@ export const DESK = { hx: 520, hz: 330 };
 export const STEP = 2;
 
 // Grip model shared by physics and the AI speed profile.
-export const GRIP0 = 16, GRIPK = 0.0035;
+export const GRIP0 = 19, GRIPK = 0.0032;
 export const gripAt = (v) => GRIP0 + GRIPK * v * v;
 
 /* Prop footprints (desk units; 1 unit is about 1.6 mm of real desk):
@@ -13,54 +13,27 @@ export const gripAt = (v) => GRIP0 + GRIPK * v * v;
    pad 47x47 - pen 90x5 - plant r34 - stapler 100x26 - lamp r40 - notebook 130x180 - donut r26 */
 export const TRACKS = [
   {
-    id: "standup", name: "Monday Standup", mood: "day", width: 14,
-    blurb: "Fast and flowing. One lap of the keyboard, then round the mug before anyone notices.",
+    id: "standup", name: "Silverline Circuit", mood: "day", width: 14,
+    blurb: "Fast and flowing. A long pit straight, a sweeping back section and one tight loop to get wrong.",
     pts: [[-260, 178], [0, 182], [240, 178], [345, 150], [385, 70], [350, -10], [270, -45], [180, -20], [90, -60], [-10, -25],
       [-120, -60], [-200, -130], [-250, -215], [-340, -235], [-410, -170], [-390, -80], [-320, -20], [-400, 50], [-410, 130], [-340, 180]],
     drs: [[0.0, 0.2]],
-    pads: [[0.37, 0], [0.62, 0]],
-    spills: [[0.45, 3, 9], [0.83, -2, 8]],
-    props: [
-      { t: "monitor", x: 0, z: -235 }, { t: "keyboard", x: 0, z: 78 }, { t: "mouse", x: 228, z: 70, rot: 0.1 },
-      { t: "mug", x: -312, z: -128 }, { t: "phone", x: 330, z: -170, rot: 0.35 }, { t: "pad", x: -250, z: 85, rot: 0.2, c: "#ffd84a" },
-      { t: "pad", x: -190, z: 105, rot: -0.3, c: "#ff8fb1" }, { t: "pen", x: 60, z: -150, rot: 0.5, c: "#2a63d4" },
-      { t: "pen", x: 80, z: -175, rot: 0.35, c: "#d43b2a" }, { t: "plant", x: 455, z: -265 }, { t: "lamp", x: -460, z: -275 },
-      { t: "notebook", x: 215, z: -222, rot: -0.12 }, { t: "stapler", x: -150, z: -250, rot: 0.2 }, { t: "donut", x: 455, z: 250 },
-    ],
   },
   {
-    id: "deadline", name: "The Deadline", mood: "night", width: 13,
-    blurb: "It is 11:48 pm. Tight, technical, lit by one lamp and a spreadsheet nobody will read.",
+    id: "deadline", name: "Harbour Lights", mood: "night", width: 13,
+    blurb: "A night race under floodlights. Tight, technical, and the walls are close.",
     pts: [[-150, 205], [80, 210], [250, 200], [330, 235], [420, 215], [440, 130], [370, 80], [300, 10], [380, -60], [440, -150],
       [380, -240], [280, -250], [230, -170], [160, -120], [70, -160], [20, -250], [-70, -270], [-110, -190], [-40, -110], [-60, -40],
       [-160, -60], [-250, -120], [-340, -250], [-430, -230], [-440, -120], [-380, -40], [-420, 60], [-380, 160], [-280, 190]],
     drs: [[0.0, 0.11]],
-    pads: [[0.3, 0], [0.74, 0]],
-    spills: [[0.52, 2, 8], [0.2, -2, 8], [0.9, 0, 8]],
-    props: [
-      { t: "monitor", x: 140, z: -262 }, { t: "keyboard", x: -150, z: 90, rot: 0.04 }, { t: "mouse", x: 60, z: 95, rot: -0.15 },
-      { t: "mug", x: 350, z: 150 }, { t: "lamp", x: 330, z: -150, on: true }, { t: "notebook", x: 170, z: 20, rot: 0.3 },
-      { t: "phone", x: -330, z: -90, rot: -0.5 }, { t: "donut", x: -200, z: -235 }, { t: "pad", x: -20, z: -200, rot: 0.3, c: "#8fe3a0" },
-      { t: "pen", x: -230, z: -20, rot: 0.2, c: "#222" }, { t: "stapler", x: 480, z: -30, rot: 1.5 }, { t: "plant", x: -470, z: 270 },
-      { t: "pad", x: 300, z: -60, rot: -0.2, c: "#ffd84a" },
-    ],
   },
   {
-    id: "replyall", name: "Reply-All Raceway", mood: "sunset", width: 15,
-    blurb: "A straight as long as the thread, two hairpins as tight as the budget.",
+    id: "replyall", name: "Sunset Ridge", mood: "sunset", width: 15,
+    blurb: "Golden hour. Two long DRS straights, two hairpins, and a lot of slipstream.",
     pts: [[-330, 255], [0, 262], [330, 255], [440, 215], [455, 120], [380, 80], [290, 120], [200, 160], [140, 95], [200, 20],
       [330, -20], [440, -80], [450, -200], [360, -270], [180, -275], [0, -200], [-180, -275], [-360, -270], [-450, -190], [-430, -80],
       [-320, -40], [-200, -70], [-110, -20], [-170, 60], [-290, 80], [-420, 60], [-460, 150], [-430, 230]],
     drs: [[0.0, 0.16], [0.48, 0.6]],
-    pads: [[0.3, 0], [0.86, 0]],
-    spills: [[0.41, 0, 9], [0.7, 2, 9]],
-    props: [
-      { t: "keyboard", x: 0, z: 185, rot: 0 }, { t: "monitor", x: 0, z: -80 }, { t: "mouse", x: 255, z: 70, rot: 0.6 },
-      { t: "mug", x: 350, z: 170 }, { t: "phone", x: -300, z: 160, rot: 1.45 }, { t: "notebook", x: 310, z: -150, rot: 0.2 },
-      { t: "donut", x: -300, z: -160 }, { t: "plant", x: 180, z: -160 }, { t: "lamp", x: -180, z: -180 },
-      { t: "pad", x: -30, z: 60, rot: 0.2, c: "#7cc7ff" }, { t: "pen", x: 60, z: 30, rot: -0.4, c: "#2a63d4" },
-      { t: "stapler", x: -240, z: 10, rot: 0.1 }, { t: "pad", x: 480, z: 290, rot: 0.1, c: "#ffd84a" },
-    ],
   },
 ];
 
@@ -174,6 +147,13 @@ export function buildTrack(def) {
   // zones
   T.drs = new Uint8Array(n);
   for (const [a, b] of def.drs || []) for (let i = Math.floor(a * n); i < Math.floor(b * n); i++) T.drs[wrap(i, n)] = 1;
+  // barrier offsets each side (pulled in on the inside of tight corners so the wall never folds over itself)
+  const wp = new Float32Array(n), wm = new Float32Array(n), WALL = 21;
+  for (let i = 0; i < n; i++) {
+    const kk = T.k[i], inner = Math.max(T.half + 5, Math.min(WALL, 0.72 / (Math.abs(kk) + 1e-6)));
+    wp[i] = kk > 0 ? inner : WALL; wm[i] = kk < 0 ? inner : WALL;
+  }
+  T.wp = smoothCyclic(wp, 6, 2); T.wm = smoothCyclic(wm, 6, 2);
   T.pads = (def.pads || []).map(([s, o]) => { const i = Math.floor(s * n); return { i, x: x[i] + T.nx[i] * o, z: z[i] + T.nz[i] * o, h: Math.atan2(T.tz[i], T.tx[i]) }; });
   T.spills = (def.spills || []).map(([s, o, r]) => { const i = Math.floor(s * n); return { i, x: x[i] + T.nx[i] * o, z: z[i] + T.nz[i] * o, r }; });
   T.colliders = (def.props || []).map((p) => {

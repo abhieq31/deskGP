@@ -18,7 +18,7 @@ for (const def of TRACKS) {
   }
   if (minSelf < T.width + 16) bad(`track passes ${minSelf.toFixed(1)} from itself`); else console.log(`  self clearance ${minSelf.toFixed(0)}`);
   // props
-  def.props.forEach((p, pi) => {
+  (def.props || []).forEach((p, pi) => {
     const col = T.colliders[pi]; let md = 1e9;
     for (let i = 0; i < T.n; i++) {
       let d;
@@ -31,7 +31,7 @@ for (const def of TRACKS) {
     const ex = sh.r || Math.abs(Math.cos(r)) * sh.w / 2 + Math.abs(Math.sin(r)) * sh.d / 2, ez = sh.r || Math.abs(Math.sin(r)) * sh.w / 2 + Math.abs(Math.cos(r)) * sh.d / 2;
     if (Math.abs(p.x) + ex > DESK.hx - 4 || Math.abs(p.z) + ez > DESK.hz - 4) bad(`${p.t} at (${p.x},${p.z}) hangs off the desk`);
   });
-  for (let a = 0; a < def.props.length; a++) for (let b = a + 1; b < def.props.length; b++) {
+  for (let a = 0; a < (def.props || []).length; a++) for (let b = a + 1; b < def.props.length; b++) {
     const A = def.props[a], B = def.props[b], ra = PROP_SHAPES[A.t].r || Math.min(PROP_SHAPES[A.t].w, PROP_SHAPES[A.t].d) / 2, rb = PROP_SHAPES[B.t].r || Math.min(PROP_SHAPES[B.t].w, PROP_SHAPES[B.t].d) / 2;
     if (Math.hypot(A.x - B.x, A.z - B.z) < ra + rb) bad(`${A.t} and ${B.t} overlap`);
   }

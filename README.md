@@ -1,15 +1,15 @@
 # DeskGP
 
-Tiny open-wheel cars racing across a giant office desk. Multiplayer by room code, bots when you are alone. One HTML file, no server.
+Electric sedans on proper circuits, raced from your desk. Multiplayer by room code, bots when you are alone. One HTML file, no server.
 
 **Play: [abhieq31.com/deskgp](https://abhieq31.com/deskgp/)**
 
 ## What is in it
 
-- **Three circuits** taped onto a desk, each with its own light: Monday Standup (day), The Deadline (night, one lamp), Reply-All Raceway (sunset). Mugs, keyboards and staplers are solid. The desk edge is a long way down.
+- **Three circuits** with kerbs, gravel traps, barriers, grandstands and a pit building: Silverline Circuit (day), Harbour Lights (night, floodlit), Sunset Ridge (golden hour).
 - **Multiplayer for up to 8** by sharing a six-character code or a link. Bots fill the rest of the grid; the host picks circuit, laps, bot pace and teams.
 - **Solo** against bots at four pace levels, plus a ghost of your best lap and a live delta to it.
-- **Racing model**: grip rises with speed (downforce), braking and cornering share one friction budget, slipstream, DRS zones, kerbs, off-track drag, coffee spills, sticky-note boost pads, and a caffeine boost that recharges under braking and in a tow.
+- **Racing model**: grip rises with speed (downforce), braking and cornering share one friction budget, slipstream, DRS zones, kerbs, lift-off regeneration, grass and gravel that slow you down, solid barriers, and a boost that recharges under braking and in a tow.
 - **Race craft**: five-light start with reaction time and jump-start penalty, sector colours, fastest-lap point, reverse-championship grids, two-team scoring, emotes, timing tower, minimap (bottom right), four cameras.
 - **Boss key (B)**: a spreadsheet covers the screen, sound cuts, and the autopilot keeps your car in the race.
 
@@ -18,7 +18,7 @@ Tiny open-wheel cars racing across a giant office desk. Multiplayer by room code
 | | |
 | :-- | :-- |
 | Drive | WASD or arrow keys (gamepad and touch also work) |
-| Caffeine boost | Space or Shift |
+| Boost | Space or Shift |
 | Reset to track | R |
 | Camera | C |
 | Mute | M |

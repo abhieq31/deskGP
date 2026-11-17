@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>DeskGP - tiny cars, giant desk</title>
-<meta name="description" content="Tiny open-wheel racing across an office desk. Race colleagues with a room code, or bots when you are alone. Runs in the browser, nothing to install.">
+<title>DeskGP - electric racing from your desk</title>
+<meta name="description" content="Electric sedans on proper circuits. Race colleagues with a room code, or bots when you are alone. Runs in the browser, nothing to install.">
 <meta name="theme-color" content="#0b0d12">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d12'/%3E%3Cpath d='M10 40h44l-6-12H26l-6 6h-10z' fill='%23ff2d2d'/%3E%3Ccircle cx='20' cy='42' r='7' fill='%23fff'/%3E%3Ccircle cx='46' cy='42' r='7' fill='%23fff'/%3E%3C/svg%3E">
 <style>
@@ -31,22 +31,22 @@
   <div id="dash">
     <div id="rpm"></div>
     <div id="speedrow"><span id="gear">1</span><span id="speed">0</span><span id="unit">km/h</span></div>
-    <div id="badges"><b id="b-drs">DRS</b><b id="b-tow">TOW</b><b id="b-cafe">CAFFEINE</b></div>
+    <div id="badges"><b id="b-drs">DRS</b><b id="b-tow">TOW</b><b id="b-cafe">BOOST</b></div>
     <div id="energy"><i></i></div>
   </div>
   <div id="mapwrap"><canvas id="map" width="440" height="300"></canvas></div>
   <div id="spect" hidden></div>
-  <div id="keys">WASD / arrows drive &middot; Space caffeine &middot; R reset &middot; C camera &middot; M mute &middot; B boss key &middot; 1-4 emotes &middot; Esc menu</div>
+  <div id="keys">WASD / arrows drive &middot; Space boost &middot; R reset &middot; C camera &middot; M mute &middot; B boss key &middot; 1-4 emotes &middot; Esc menu</div>
   <div id="touch" hidden>
     <button id="t-left" aria-label="Steer left">&#9664;</button><button id="t-right" aria-label="Steer right">&#9654;</button>
-    <button id="t-boost" aria-label="Caffeine boost">&#9749;</button><button id="t-brake" aria-label="Brake">BRAKE</button><button id="t-gas" aria-label="Accelerate">GO</button>
+    <button id="t-boost" aria-label="Boost">&#9889;</button><button id="t-brake" aria-label="Brake">BRAKE</button><button id="t-gas" aria-label="Accelerate">GO</button>
   </div>
 </div>
 
 <div id="menu" class="screen">
   <div class="panel home">
     <h1 class="logo">DESK<span>GP</span></h1>
-    <p class="tag">Tiny cars. Giant desk. Zero meetings.</p>
+    <p class="tag">Electric. Instant torque. Race from your desk.</p>
     <label class="field"><span>Driver name</span><input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Your name"></label>
     <div class="field"><span>Livery</span><div id="colors"></div></div>
     <div class="btns">
@@ -56,7 +56,7 @@
     <div class="joinrow"><input id="code" maxlength="9" autocomplete="off" spellcheck="false" placeholder="ROOM CODE"><button id="join">Join</button></div>
     <p id="menuerr" class="err"></p>
     <p class="career" id="career"></p>
-    <p class="fine">Send the code to colleagues: up to 8 drivers, bots fill the grid. Arrow keys or WASD, Space for caffeine boost. <b>B</b> is the boss key.</p>
+    <p class="fine">Send the code to colleagues: up to 8 drivers, bots fill the grid. Arrow keys or WASD, Space for boost. <b>B</b> is the boss key.</p>
   </div>
 </div>
 

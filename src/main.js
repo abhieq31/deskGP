@@ -7,7 +7,7 @@ import { createAudio } from "./audio.js";
 import { createNet, newRoomCode, parseRoomCode, formatRoomCode, newId } from "./net.js";
 
 const $ = (s) => document.querySelector(s);
-const COLORS = ["#e63946", "#ff9f1c", "#ffd60a", "#2ec4b6", "#3a86ff", "#8338ec", "#ff5d8f", "#f4f4f0"];
+const COLORS = ["#f2f3f5", "#c1121f", "#1e4fd8", "#30343f", "#9aa4b5", "#0f8a7a", "#f59e0b", "#7c3aed"];
 const POINTS = [25, 18, 15, 12, 10, 8, 6, 4];
 const TITLES = ["Employee of the Month", "Exceeds expectations", "Meets expectations", "Solid contributor", "Room to grow", "Let's circle back", "Needs a development plan", "Performance improvement plan"];
 const RANKS = [[0, "Intern"], [60, "Associate"], [180, "Senior Associate"], [400, "Manager"], [800, "Director"], [1500, "VP of Going Fast"], [3000, "Chief Racing Officer"]];
@@ -22,8 +22,8 @@ const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("deskgp:" + k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("deskgp:" + k, JSON.stringify(v)); } catch {} },
 };
-const prefs = Object.assign({ name: "", color: COLORS[Math.floor(Math.random() * COLORS.length)], sound: true, ghost: true, cam: 0, xp: 0, races: 0, wins: 0 }, store.get("prefs", {}));
-const savePrefs = () => store.set("prefs", prefs);
+const prefs = Object.assign({ name: "", color: COLORS[1], sound: true, ghost: true, cam: 0, xp: 0, races: 0, wins: 0 }, store.get("prefs2", {}));
+const savePrefs = () => store.set("prefs2", prefs);
 const me = { id: newId(), name: prefs.name || "", color: prefs.color, joined: Date.now() };
 
 const tracks = TRACKS.map(buildTrack);
@@ -57,8 +57,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyB" || e.code === "Backquote") toggleBoss();
   else if (e.code === "KeyM") setSound(!prefs.sound);
   else if (S.screen !== "race") return;
-  else if (e.code === "KeyC") { prefs.cam = (prefs.cam + 1) % 4; savePrefs(); toast(["Chase cam", "Desk cam", "Nose cam", "Office drone"][prefs.cam]); }
-  else if (e.code === "KeyR") { const m = S.race?.mine; if (m && S.race.state === "run" && !m.fin) { respawn(m.c, S.race.T); toast("Back on the tarmac", "r"); } }
+  else if (e.code === "KeyC") { prefs.cam = (prefs.cam + 1) % 4; savePrefs(); toast(["Chase cam", "High cam", "Bonnet cam", "Helicopter"][prefs.cam]); }
+  else if (e.code === "KeyR") { const m = S.race?.mine; if (m && S.race.state === "run" && !m.fin) { respawn(m.c, S.race.T); toast("Back on track", "r"); } }
   else if (e.code === "Escape") setPaused(!S.paused);
   else if (/^Digit[1-4]$/.test(e.code)) emote(+e.code.slice(5) - 1);
   else if (S.race?.spect && (e.code === "ArrowRight" || e.code === "ArrowLeft")) S.race.spectI = (S.race.spectI || 0) + (e.code === "ArrowRight" ? 1 : -1);
@@ -183,8 +183,8 @@ function drawMini(cv, T, dots) {
 function renderLobby() {
   const R = S.room; if (!R || S.screen !== "lobby") return;
   const host = isHost(), mem = members(), hid = hostId();
-  $("#roomlabel").textContent = R.solo ? "SOLO SESSION" : "ROOM CODE - SHARE IT";
-  $("#roomcode").textContent = R.solo ? "You vs the office" : formatRoomCode(R.code); $("#roomcode").classList.toggle("solo", R.solo);
+  $("#roomlabel").textContent = R.solo ? "YOU VS THE BOTS" : "ROOM CODE - SHARE IT";
+  $("#roomcode").textContent = R.solo ? "Solo session" : formatRoomCode(R.code); $("#roomcode").classList.toggle("solo", R.solo);
   $("#copy").hidden = R.solo;
   const nb = Math.min(R.cfg.bots, MAXCARS - mem.length);
   $("#players").innerHTML = mem.map((m) => `<div class="pl"><i style="background:${esc(m.color)}"></i>${esc(m.name)}${m.me ? " (you)" : ""}<span class="pts">${R.points[m.id] ? R.points[m.id] + " pts" : ""}</span><em>${m.id === hid ? "host" : m.rtc ? "direct" : "relay"}</em></div>`).join("")
@@ -193,7 +193,7 @@ function renderLobby() {
   $("#netstat").textContent = R.solo ? "" : !n.relaysUp ? "Connecting to the matchmaking relays…" : mem.length === 1 ? "Waiting for colleagues. Send them the code or the link." : `${mem.length} drivers connected`;
   const tk = $("#tracks");
   if (!tk.childElementCount) {
-    tk.innerHTML = tracks.map((T, i) => `<button class="trk" data-i="${i}"><canvas width="240" height="150"></canvas><b>${T.def.name}</b><small>${(T.len * 1.6 / 1000).toFixed(2)} m of desk · ${T.def.mood}</small></button>`).join("") ;
+    tk.innerHTML = tracks.map((T, i) => `<button class="trk" data-i="${i}"><canvas width="240" height="150"></canvas><b>${T.def.name}</b><small>${(T.len / 1000).toFixed(2)} km · ${T.def.mood}</small></button>`).join("") ;
     tk.insertAdjacentHTML("afterend", `<p id="trkblurb"></p>`);
     tk.querySelectorAll("canvas").forEach((cv, i) => drawMini(cv, tracks[i]));
     tk.onclick = (e) => { const b = e.target.closest(".trk"); if (b) setCfg("track", +b.dataset.i); };
@@ -204,7 +204,7 @@ function renderLobby() {
   seg($("#o-laps"), [[1, "1"], [2, "2"], [3, "3"], [5, "5"]], R.cfg.laps, "laps");
   seg($("#o-bots"), [0, 1, 3, 5, 7].map((b) => [b, String(b)]), R.cfg.bots, "bots");
   seg($("#o-diff"), DIFFS.map((d, i) => [i, d.name]), R.cfg.diff, "diff");
-  seg($("#o-teams"), [[false, "Every desk for itself"], [true, "Two teams"]], R.cfg.teams, "teams");
+  seg($("#o-teams"), [[false, "Solo"], [true, "Two teams"]], R.cfg.teams, "teams");
   $("#lobby .panel").classList.toggle("locked", !host);
   $("#start").hidden = !host; $("#start").disabled = mem.length + nb < 1;
   $("#start").textContent = R.raceN ? "Next race" : "Start race";
@@ -466,7 +466,7 @@ function updateHud(race, dt, now) {
   }
   const view = race.focus; if (!view) return;
   const c = view.c, kmh = Math.round(c.speed * 3.6);
-  setText("#speed", String(kmh)); setText("#gear", String(gearOf(c.speed)));
+  setText("#speed", String(kmh)); setText("#gear", c.boosting ? "B" : "D");
   const rp = Math.round(rpmOf(c.speed) * 12); if (hudCache.rpm !== rp) { hudCache.rpm = rp; [...$("#rpm").children].forEach((el, i) => el.classList.toggle("on", i < rp)); }
   setClass("#b-drs", "on", !!c.drs); setClass("#b-tow", "on", c.tow > 0.15); setClass("#b-cafe", "on", !!c.boosting);
   const en = Math.round(c.energy * 100); if (hudCache.en !== en) { hudCache.en = en; $("#energy i").style.width = en + "%"; $("#energy").classList.toggle("full", en > 97); }
@@ -543,12 +543,12 @@ $("#res-next").onclick = () => { endRace(); show("lobby"); renderLobby(); startD
 let last = performance.now(), acc = 0;
 function frame(t) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.1, (t - last) / 1000); last = t;
+  const dt = Math.min(0.25, (t - last) / 1000); last = t;
   const race = S.race, now = netNow();
   if (!race) { world.updateCamera(null, 0, dt); world.render(dt); return; }
   acc += dt; let steps = 0;
-  while (acc >= DT && steps < 12) { simStep(race, now - (acc - DT) * 1000); acc -= DT; steps++; }
-  if (steps === 12) acc = 0;
+  while (acc >= DT && steps < 30) { simStep(race, now - (acc - DT) * 1000); acc -= DT; steps++; }
+  if (steps === 30) acc = 0;
   const raceT = (now - race.t0) / 1000, al = acc / DT;
   updateOrder(race);
   // who the camera follows

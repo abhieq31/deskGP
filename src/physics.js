@@ -4,7 +4,7 @@ import { DESK, gripAt, locate, lateral, wrap } from "./track.js";
 export const CAR_R = 1.75;         // collision radius
 export const DRAG = 0.0016;        // aero drag coefficient (per unit mass)
 export const POWER = 1150;         // engine power per unit mass
-export const TRACTION = 15;        // low-speed traction limit (m/s^2)
+export const TRACTION = 17;        // low-speed traction limit (m/s^2)
 export const VMAX_DISPLAY = 3.6;   // m/s -> km/h
 
 export function makeCar(id) {
@@ -52,7 +52,7 @@ export function stepCar(c, inp, dt, T) {
   // inputs
   const thr = clamp(inp.thr || 0, 0, 1), brk = clamp(inp.brk || 0, 0, 1);
   const st = clamp(inp.steer || 0, -1, 1);
-  const rate = (Math.abs(st) > Math.abs(c.steer) ? 5.5 : 9) * dt;
+  const rate = (Math.abs(st) > Math.abs(c.steer) || st * c.steer < 0 ? 8.5 : 12) * dt;
   c.steer += clamp(st - c.steer, -rate, rate);
   c.thr = thr; c.brk = brk;
 
@@ -65,19 +65,20 @@ export function stepCar(c, inp, dt, T) {
 
   // yaw: steering asks for a yaw rate, capped by what the tyres could hold on clean tarmac
   const dir = vf >= 0 ? 1 : -1;
-  const yawCap = Math.min(2.7, 0.97 * Gnom / Math.max(v, 5)) * clamp(v / 4, 0, 1);
+  const yawCap = Math.min(3.0, 1.1 * Gnom / Math.max(v, 5)) * clamp(v / 4, 0, 1); // asks a little more than the tyres hold: the limit is a slide, not a wall
   const slipAng = Math.atan2(vl, Math.abs(vf) + 2);
   let wTarget = c.steer * yawCap * dir;
   wTarget += slipAng * 2.2 * clamp(v / 12, 0, 1);            // self-aligning: nose follows the slide back
   if (thr > 0.6 && v < 34 && c.surf !== 0) wTarget += c.steer * 0.35 * thr; // loose rear on kerbs/dirt under power
-  c.w += (wTarget - c.w) * Math.min(1, 14 * dt);
+  c.w += (wTarget - c.w) * Math.min(1, 22 * dt);
   c.h += c.w * dt;
 
   // longitudinal
   let acc = 0;
   const pmul = (c.boosting ? 1.4 : 1) * (c.padT > 0 ? 1.5 : 1);
   if (thr > 0) acc += thr * Math.min(TRACTION * surfGrip * (c.padT > 0 ? 1.4 : 1), POWER * pmul / Math.max(Math.abs(vf), 1));
-  const drag = DRAG * (c.drs ? 0.74 : 1) * (1 - 0.38 * c.tow) * v * v + extraDrag + 0.25;
+  const regen = thr === 0 && brk === 0 && vf > 8 ? 3.2 : 0; // lift-off regeneration, like any electric car
+  const drag = DRAG * (c.drs ? 0.74 : 1) * (1 - 0.38 * c.tow) * v * v + extraDrag + 0.25 + regen;
   const brakeA = brk * Math.min(30, G);
   if (inp.reverse && vf < 2) acc = -6 * surfGrip; // gentle reverse
   vf += acc * dt;
@@ -103,13 +104,19 @@ export function stepCar(c, inp, dt, T) {
   // props
   for (const p of T.colliders) collideProp(c, p);
 
-  // desk edge
-  if (Math.abs(c.x) > DESK.hx + 1 || Math.abs(c.z) > DESK.hz + 1) { c.fall = 0.001; c.w = (Math.random() - 0.5) * 8; }
 
   // track position and progress
   const prev = c.idx;
   c.idx = locate(T, c.x, c.z, c.idx);
   c.lat = lateral(T, c.idx, c.x, c.z);
+  // barriers
+  const lim = (c.lat > 0 ? T.wp[c.idx] : T.wm[c.idx]) - 1.1;
+  if (Math.abs(c.lat) > lim && Math.abs(c.lat) < lim + 12) {
+    const sgn = Math.sign(c.lat), nx = T.nx[c.idx] * sgn, nz = T.nz[c.idx] * sgn, pen = Math.abs(c.lat) - lim;
+    c.x -= nx * pen; c.z -= nz * pen; c.lat = sgn * lim;
+    const vn = c.vx * nx + c.vz * nz;
+    if (vn > 0) { const keep = 1 - Math.min(0.35, vn * 0.02); c.vx = (c.vx - 1.3 * vn * nx) * keep; c.vz = (c.vz - 1.3 * vn * nz) * keep; c.bump = Math.max(c.bump, Math.min(1, vn / 16)); }
+  }
   let d = c.idx - prev; if (d < -T.n / 2) d += T.n; else if (d > T.n / 2) d -= T.n;
   c.total += d;
   c.wrong = (T.tx[c.idx] * c.vx + T.tz[c.idx] * c.vz) < -4 ? c.wrong + dt : 0;
@@ -188,9 +195,8 @@ export function updateTow(c, cars, T) {
   return drsOk;
 }
 
-export const gearOf = (v) => clamp(Math.floor(Math.pow(Math.max(v, 0) / 100, 0.8) * 8) + 1, 1, 8);
+export const gearOf = () => 1;
 export function rpmOf(v) { // 0..1 within the current gear
-  const g = gearOf(v), lo = Math.pow((g - 1) / 8, 1.25) * 100, hi = Math.pow(g / 8, 1.25) * 100;
-  return clamp(0.35 + 0.65 * (v - lo) / (hi - lo), 0.12, 1);
+  return clamp(v / 92, 0, 1);
 }
 export { clamp, wrap };

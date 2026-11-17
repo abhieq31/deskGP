@@ -17,7 +17,8 @@ export const DIFFS = [
 export const codeOf = (name) => {
   const d = DRIVERS.find((x) => x[0] === name); if (d) return d[1];
   const w = String(name || "").trim().split(/\s+/), s = (w.length > 1 ? w[w.length - 1] : w[0] || "DRV").replace(/[^A-Za-z]/g, "");
-  return (s + "XXX").slice(0, 3).toUpperCase();
+  if (s.length < 3) { const all = String(name || "").replace(/[^A-Za-z]/g, ""); return all.length >= 3 && !/^Driver/i.test(name) ? all.slice(0, 3).toUpperCase() : "YOU"; }
+  return s.slice(0, 3).toUpperCase();
 };
 
 export function makeBrain(skill, seed = Math.random()) {

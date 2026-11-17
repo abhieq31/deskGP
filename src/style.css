@@ -145,8 +145,9 @@ h2{margin:0 0 14px;font-size:30px;font-style:italic;font-weight:850;letter-spaci
 #energy.full i{box-shadow:0 0 12px #7ee0ff}
 #mapwrap{position:absolute;right:14px;bottom:14px;width:220px;height:150px;background:rgba(8,9,12,.78);border-radius:14px;padding:4px;border:1px solid var(--line)}
 #map{width:100%;height:100%;display:block}
+#hold{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);background:rgba(8,9,12,.9);padding:16px 26px;border-radius:12px;font-weight:900;font-size:20px;letter-spacing:.04em;border:1px solid var(--line)}
 #spect{position:absolute;top:150px;left:50%;transform:translateX(-50%);background:rgba(8,9,12,.85);padding:8px 16px;border-radius:8px;font-weight:700}
-#keys{position:absolute;left:100px;bottom:14px;font-size:11px;color:rgba(255,255,255,.5);text-shadow:0 1px 3px #000}
+#keys{position:absolute;left:14px;bottom:14px;font-size:11px;color:rgba(255,255,255,.5);text-shadow:0 1px 3px #000}
 #touch button{position:absolute;pointer-events:auto;width:76px;height:76px;border-radius:50%;background:rgba(8,9,12,.55);font-size:20px;font-weight:800;border:2px solid rgba(255,255,255,.3);padding:0}
 #t-left{left:16px;bottom:24px}#t-right{left:104px;bottom:24px}
 #t-gas{right:16px;bottom:178px;background:rgba(47,227,122,.35)!important}#t-brake{right:104px;bottom:178px;font-size:13px!important}#t-boost{right:60px;bottom:262px}

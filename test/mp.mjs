@@ -27,6 +27,15 @@ for (const [i, p] of pages.entries()) console.log(`p${i}`, await p.evaluate(() =
 await host.screenshot({ path: out + "/mp-lobby-host.png" });
 await host.waitForTimeout(600);
 await host.click("#start"); await host.waitForTimeout(9500);
+if (process.env.HOLD) {
+  const t = async (p) => p.evaluate(() => { const S = window.__deskgp.S, r = S.race; return { held: r.held, raceT: +((performance.now() + S.clockOff - r.t0) / 1000).toFixed(1), hold: !document.querySelector("#hold").hidden }; });
+  await host.waitForTimeout(4000); await host.keyboard.press("Escape"); await host.waitForTimeout(3000);
+  const a1 = await t(guests[0]); await host.waitForTimeout(5000); const a2 = await t(guests[0]);
+  console.log("host paused -> guest", JSON.stringify(a1), "5 s later", JSON.stringify(a2));
+  await host.keyboard.press("Escape"); await host.waitForTimeout(4000);
+  const a3 = await t(guests[0]), h3 = await t(host);
+  console.log("host resumed -> guest", JSON.stringify(a3), "host", JSON.stringify(h3));
+}
 for (const p of pages) await p.keyboard.press("KeyB"); // autopilot drives everyone
 await host.waitForTimeout(9000);
 for (const [i, p] of pages.entries()) console.log(`p${i}`, await p.evaluate(() => { const r = window.__deskgp.S.race, S = window.__deskgp.S; return { screen: S.screen, state: r?.state, clockOff: Math.round(S.clockOff), cars: r?.cars.map((e) => `${e.name}:${e.c.total}:${e.c.speed.toFixed(0)}:d${Math.round(e.delay)}`) }; }));

@@ -133,7 +133,20 @@ export function buildTrack(def) {
     const kk = T.k[i], inner = Math.max(Math.min(WALL, T.half + 5), Math.min(WALL, 0.72 / (Math.abs(kk) + 1e-6)));
     wp[i] = kk > 0 ? inner : WALL; wm[i] = kk < 0 ? inner : WALL;
   }
-  T.wp = smoothCyclic(wp, 6, 2); T.wm = smoothCyclic(wm, 6, 2);
+  // Never let a barrier come closer to any other part of the circuit than to its own: where two stretches of track
+  // run close together (or a corner is tight), pull the wall in so it can never cross tarmac or fold over itself.
+  const geo = (o, i, sgn) => {
+    let lo = T.half + 2.2, hi = o;
+    const ok = (d) => { const px = x[i] + T.nx[i] * sgn * d, pz = z[i] + T.nz[i] * sgn * d; for (let j = 0; j < n; j += 2) { const dx = px - x[j], dz = pz - z[j]; if (dx * dx + dz * dz < (d - 0.6) * (d - 0.6)) return false; } return true; };
+    if (ok(hi)) return hi;
+    for (let k = 0; k < 7; k++) { const m = (lo + hi) / 2; if (ok(m)) lo = m; else hi = m; }
+    return lo;
+  };
+  const gp = new Float32Array(n), gm = new Float32Array(n);
+  for (let i = 0; i < n; i++) { gp[i] = geo(wp[i], i, 1); gm[i] = geo(wm[i], i, -1); }
+  T.wp = smoothCyclic(gp, 6, 2); T.wm = smoothCyclic(gm, 6, 2);
+  for (let i = 0; i < n; i++) { T.wp[i] = Math.max(T.half + 2.2, Math.min(T.wp[i], gp[i])); T.wm[i] = Math.max(T.half + 2.2, Math.min(T.wm[i], gm[i])); }
+  T.wallMax = Math.max(...T.wp, ...T.wm);
   // DRS: one detection point 120 m before each activation zone
   T.drsZones = (def.drs || []).map(([a, b]) => ({ a: wrap(Math.floor(a * n), n), b: wrap(Math.floor(b * n), n), det: wrap(Math.floor(a * n) - 60, n) }));
   T.sector = (i) => Math.min(2, Math.floor(wrap(i, n) / n * 3));

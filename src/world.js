@@ -8,6 +8,7 @@ import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { wrap, gridPose } from "./track.js";
+import { layout, rng } from "./layout.js";
 
 const V3 = THREE.Vector3;
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -60,7 +61,7 @@ export function createWorld(canvas) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 4500);
   camera.position.set(0, 300, 500);
-  const W = { renderer, scene, camera, cars: new Map(), T: null, quality: 2, auto: true, speedFx: 0, boostFx: 0 };
+  const W = { renderer, scene, camera, cars: new Map(), T: null, quality: 1, auto: true, speedFx: 0, boostFx: 0 };
 
   // post chain
   const rt = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType, samples: 4 });
@@ -100,6 +101,7 @@ export function createWorld(canvas) {
   const fenceTex = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = "rgba(200,205,210,0.75)"; g.lineWidth = 1.5; for (let i = -64; i < 128; i += 8) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 64, 64); g.stroke(); g.beginPath(); g.moveTo(i + 64, 0); g.lineTo(i, 64); g.stroke(); } }, { repeat: [1, 1] });
   const checker = canvasTex(128, 32, (g) => { for (let x = 0; x < 16; x++) for (let y = 0; y < 4; y++) { g.fillStyle = (x + y) % 2 ? "#111" : "#f4f4f4"; g.fillRect(x * 8, y * 8, 8, 8); } });
   const crowdTex = canvasTex(256, 64, (g, w, h) => { g.fillStyle = "#3a3f4a"; g.fillRect(0, 0, w, h); const c = ["#e63946", "#f1faee", "#ffd60a", "#3a86ff", "#ff9f1c", "#8ecae6", "#222", "#ffb4a2", "#ff8000", "#27f4d2"]; for (let i = 0; i < 1800; i++) { g.fillStyle = c[Math.floor(Math.random() * c.length)]; g.fillRect(Math.random() * w, Math.random() * h, 3, 4); } }, { repeat: [1, 1] });
+  const blobTex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 2, 32, 32, 31); r.addColorStop(0, "rgba(0,0,0,0.75)"); r.addColorStop(0.55, "rgba(0,0,0,0.45)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const softDot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(0.4, "rgba(255,255,255,0.5)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const boardTex = (txt, bg = "#ffffff", fg = "#111") => canvasTex(128, 128, (g, w, h) => { g.fillStyle = bg; g.fillRect(0, 0, w, h); g.strokeStyle = "#111"; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6); g.fillStyle = fg; g.font = `900 ${txt.length > 3 ? 34 : 56}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(txt, w / 2, h / 2 + 2, 116); });
   const boards = { 150: boardTex("150"), 100: boardTex("100"), 50: boardTex("50"), drs: boardTex("DRS", "#111318", "#2fe37a"), det: boardTex("DRS DET", "#111318", "#ffffff") };
@@ -107,7 +109,7 @@ export function createWorld(canvas) {
   // ---------- lights ----------
   const hemi = new THREE.HemisphereLight(0xffffff, 0x556644, 1); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 3); scene.add(sun); scene.add(sun.target);
-  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.25;
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.03;
   let shadowR = 0; const sunDir = new V3(0, 1, 0);
   function setShadowRange(r) { if (r === shadowR) return; shadowR = r; Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 10, far: 1600 }); sun.shadow.camera.updateProjectionMatrix(); }
   function aimSun(x, z, r) { setShadowRange(r); const q = (r * 2) / sun.shadow.mapSize.x * 4; x = Math.round(x / q) * q; z = Math.round(z / q) * q; sun.target.position.set(x, 0, z); sun.position.set(x + sunDir.x * 700, sunDir.y * 700, z + sunDir.z * 700); }
@@ -290,22 +292,22 @@ export function createWorld(canvas) {
       const beam = box(span + 0.7, 2.2, 0.8, [steel, steel, steel, steel, std({ map: bt, roughness: 0.5 }), std({ map: bt, roughness: 0.5 })]); beam.position.set(gx, 9, gz); beam.rotation.y = -h0 + Math.PI / 2; G.add(beam);
       for (let i = 0; i < 5; i++) { const lm = new THREE.MeshBasicMaterial({ color: 0x2a0505, toneMapped: false }); const l = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8), lm), o = (i - 2) * 1.5; l.position.set(gx + T.nx[0] * o - Math.cos(h0) * 0.6, 7.3, gz + T.nz[0] * o - Math.sin(h0) * 0.6); G.add(l); lights.push(lm); }
     }
-    // pit building + big screen + grandstands
+    // pit building + big screen + grandstands, at positions checked clear of the whole circuit (layout.js)
+    const L = layout(T);
     const pitSide = T.k[wrap(40, T.n)] > 0 ? -1 : 1, outer = (i, s) => wallOff(T, s)(i);
     { const pit = new THREE.Group(), gt = canvasTex(1024, 128, (c, w, h) => { c.fillStyle = "#c9ced4"; c.fillRect(0, 0, w, h); c.fillStyle = "#16181d"; c.fillRect(0, 0, w, 34); for (let i = 0; i < 8; i++) { c.fillStyle = "#2a2e36"; c.fillRect(i * 128 + 14, 52, 100, 76); c.fillStyle = "#ff2d2d"; c.fillRect(i * 128 + 14, 46, 100, 6); c.fillStyle = "#fff"; c.font = "bold 20px system-ui"; c.fillText(String(i + 1).padStart(2, "0"), i * 128 + 20, 24); } });
       const side = std({ color: 0x8d939b, roughness: 0.8, envMapIntensity: 0.3 });
       const b = box(110, 9, 14, [side, side, std({ color: 0x9aa0a8 }), side, std({ map: gt, roughness: 0.6, envMapIntensity: 0.3 }), std({ map: gt, roughness: 0.6, envMapIntensity: 0.3 })]); b.position.y = 4.5; pit.add(b);
       const glass = box(110, 3.4, 12, std({ color: 0x18242f, roughness: 0.25, metalness: 0.5, envMapIntensity: 0.45 })); glass.position.y = 10.7; pit.add(glass);
       const roof = box(114, 0.5, 17, std({ color: 0xf4f5f7 })); roof.position.y = 12.7; pit.add(roof);
-      const pi = wrap(34, T.n), d = outer(pi, pitSide) + 24;
-      pit.position.set(T.x[pi] + T.nx[pi] * pitSide * d, 0, T.z[pi] + T.nz[pi] * pitSide * d); pit.rotation.y = -T.heading(pi) + (pitSide > 0 ? 0 : Math.PI); G.add(pit);
+      if (L.pit) { pit.position.set(L.pit.x, 0, L.pit.z); pit.rotation.y = -L.pit.rot + (L.pit.flip ? Math.PI : 0); G.add(pit); }
       const scr = new THREE.Group(), c = document.createElement("canvas"); c.width = 1024; c.height = 576; monitorCtx = c.getContext("2d");
       monitorTex = new THREE.CanvasTexture(c); monitorTex.colorSpace = THREE.SRGBColorSpace;
       const st = std({ color: 0x1b1d22, roughness: 0.5, metalness: 0.6 });
       const fr = box(30, 17.5, 1, st); fr.position.y = 15; scr.add(fr);
       const pl = new THREE.Mesh(new THREE.PlaneGeometry(28.6, 16.1), new THREE.MeshBasicMaterial({ map: monitorTex, toneMapped: false })); pl.position.set(0, 15, 0.52); scr.add(pl);
       for (const s of [-1, 1]) { const leg = box(0.8, 7, 0.8, st); leg.position.set(s * 11, 3.5, 0); scr.add(leg); }
-      const si = wrap(-70, T.n), sd = outer(si, -pitSide) + 10; scr.position.set(T.x[si] + T.nx[si] * -pitSide * sd, 0, T.z[si] + T.nz[si] * -pitSide * sd); scr.lookAt(T.x[wrap(si - 60, T.n)], 6, T.z[wrap(si - 60, T.n)]); G.add(scr);
+      if (L.screen) { const si = L.screen.i; scr.position.set(L.screen.x, 0, L.screen.z); scr.lookAt(T.x[wrap(si - 60, T.n)], 6, T.z[wrap(si - 60, T.n)]); G.add(scr); }
     }
     const standMat = std({ color: 0x8b929c, roughness: 0.8 }), crowdMat = std({ map: crowdTex, roughness: 0.9 }), roofMat = std({ color: 0xf1f3f5, roughness: 0.5, side: THREE.DoubleSide });
     const keepOut = []; // footprints other scenery must avoid
@@ -316,16 +318,8 @@ export function createWorld(canvas) {
       const roof = box(46, 0.4, 18, roofMat); roof.position.set(0, 16, 7); roof.rotation.x = 0.1; g.add(roof);
       return g;
     }
-    { let last = -999, count = 0;
-      for (let i = 10; i < T.n - 10 && count < 8; i += 6) {
-        if (Math.abs(T.k[i]) > 0.0022 || i - last < 30) continue;
-        const side = i < 120 ? -pitSide : (count % 2 ? 1 : -1), d = outer(i, side) + 5, x = T.x[i] + T.nx[i] * side * (d + 10), z = T.z[i] + T.nz[i] * side * (d + 10);
-        if (i > 20 && i < 95 && side === pitSide) continue;
-        if (distToTrack(T, x, z) < d + 6) continue;
-        const gs = grandstand(); gs.position.set(T.x[i] + T.nx[i] * side * d, 0, T.z[i] + T.nz[i] * side * d);
-        gs.rotation.y = -T.heading(i) + (side > 0 ? 0 : Math.PI); G.add(gs); last = i; count++; keepOut.push([gs.position.x, gs.position.z, 34]);
-      }
-    }
+    for (const st of L.stands) { const gs = grandstand(); gs.position.set(st.x, 0, st.z); gs.rotation.y = st.rot; G.add(gs); keepOut.push([st.x, st.z, 34]); }
+    if (L.pit) keepOut.push([L.pit.x, L.pit.z, 60]);
     const mt = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new V3(), col = new THREE.Color();
     if (street) {
       // city blocks: towers with lit windows, a few rooftop signs, the harbour on one side
@@ -335,12 +329,7 @@ export function createWorld(canvas) {
       }, { repeat: [1, 1] });
       const kinds = [0, 1, 2].map((k) => { const t = winTex(k); t.repeat.set(2, [3, 6, 10][k]); return new THREE.MeshStandardMaterial({ color: 0x8090a8, map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0.5 }); });
       const cells = [[], [], []];
-      for (let x = -900; x <= 900; x += 46) for (let z = -700; z <= 650; z += 46) {
-        if (z < -560) continue; // harbour water
-        const jx = x + rnd(-8, 8), jz = z + rnd(-8, 8), d = distToTrack(T, jx, jz, 6); if (d < T.half + 22) continue;
-        const near = d < 90, k = near ? (Math.random() < 0.6 ? 0 : 1) : Math.random() < 0.4 ? 2 : Math.random() < 0.6 ? 1 : 0;
-        cells[k].push([jx, jz, rnd(22, 34), rnd(22, 34), [rnd(14, 26), rnd(32, 60), rnd(70, 140)][k]]);
-      }
+      for (const [x, z, w, d, h, k] of L.buildings) cells[k].push([x, z, w, d, h]);
       cells.forEach((list, k) => {
         if (!list.length) return; const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), kinds[k], list.length);
         list.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h / 2, z), q.identity(), sc.set(w, h, d)); im.setMatrixAt(i, mt); });
@@ -368,14 +357,13 @@ export function createWorld(canvas) {
       const tt = grassTex(m, false); tt.repeat.set(220, 180);
       const terr = new THREE.Mesh(tg, std({ map: tt, roughness: 1, envMapIntensity: 0.12 })); terr.receiveShadow = true; G.add(terr);
       W.heightAt = (x, z) => { const d = distToTrack(T, x, z, 8); return clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * (id === "sunset" ? 85 : 55) + 8); };
-      const pts = [];
-      for (let k = 0; k < 5000 && pts.length < 520; k++) { const x = rnd(-1300, 1300), z = rnd(-1050, 1050), d = distToTrack(T, x, z, 6); if (d > 48 && !keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + 8)) pts.push([x, z, W.heightAt(x, z)]); }
+      const pts = L.trees.filter(([x, z]) => !keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + 8)).map(([x, z, s, r]) => [x, z, W.heightAt(x, z), s, r]);
       const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), std({ color: 0x5b4030, roughness: 1 }), pts.length);
       const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2, 1), std({ color: id === "sunset" ? 0x5d7a2f : 0x3d7c36, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
       const pine = new THREE.InstancedMesh(new THREE.ConeGeometry(3.2, 10, 7), std({ color: 0x2d5a2c, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
       let nc = 0, np = 0;
-      pts.forEach(([x, z, y], k) => { const s = rnd(0.8, 1.9); mt.compose(new V3(x, y + 2 * s, z), q.identity(), sc.set(s, s, s)); trunk.setMatrixAt(k, mt);
-        if (k % 3 === 0) { mt.compose(new V3(x, y + 7 * s, z), q.identity(), sc.set(s, s * rnd(1, 1.4), s)); pine.setMatrixAt(np++, mt); }
+      pts.forEach(([x, z, y, s, r], k) => { mt.compose(new V3(x, y + 2 * s, z), q.identity(), sc.set(s, s, s)); trunk.setMatrixAt(k, mt);
+        if (r < 0.33) { mt.compose(new V3(x, y + 7 * s, z), q.identity(), sc.set(s, s * (1 + r), s)); pine.setMatrixAt(np++, mt); }
         else { mt.compose(new V3(x, y + 6.4 * s, z), q.setFromEuler(new THREE.Euler(0, rnd(0, 6), 0)), sc.set(s, s * rnd(1.1, 1.6), s)); crown.setMatrixAt(nc, mt); crown.setColorAt(nc++, col.setScalar(rnd(0.75, 1.1))); } });
       crown.count = nc; pine.count = np;
       trunk.castShadow = crown.castShadow = pine.castShadow = W.quality > 0; crown.receiveShadow = true; G.add(trunk, crown, pine);
@@ -506,6 +494,7 @@ export function createWorld(canvas) {
         brake = add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.12), new THREE.MeshBasicMaterial({ color: 0x7a0000, toneMapped: false })), -2.56, 0.5, 0); brake.castShadow = false;
       } else flap = add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.035, 1.1), paint), -2.38, 1.08, 0);
     }
+    if (!f1) for (const ch of tilt.children) ch.position.y -= 0.07; // sit the body down on its wheels: ~13 cm ground clearance
     const wheels = [];
     for (const [x, z, front, r, wdt] of wheelSpec) {
       wheelR = r;
@@ -518,6 +507,10 @@ export function createWorld(canvas) {
         if (f1) { const ring = new THREE.Mesh(cached(`r${r}`, () => new THREE.TorusGeometry(r * 0.82, 0.018, 4, 24)), stripeMat); ring.position.z = Math.sign(z) * (wdt / 2 + 0.005); w.add(ring); }
       }
       wheels.push({ piv, w, front, z });
+    }
+    if (!ghost) { // contact shadow so the car always looks planted, whatever the sun is doing
+      const blob = new THREE.Mesh(cached("blob", () => new THREE.PlaneGeometry(5.6, 2.9)), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, opacity: 0.85, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8 }));
+      blob.rotation.x = -Math.PI / 2; blob.position.y = 0.035; g.add(blob);
     }
     if (!ghost) {
       glow = new THREE.Mesh(cached("glow", () => new THREE.PlaneGeometry(6.6, 3.8)), new THREE.MeshBasicMaterial({ map: softDot, color: 0x49b6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.06; g.add(glow);
@@ -712,20 +705,20 @@ export function createWorld(canvas) {
   };
 
   // ---------- quality, warm-up, frame ----------
-  // 2 high: post-processing with bloom, 2048 shadows. 1 medium: post without bloom, 1024 shadows. 0 low: direct render.
+  // 2 high: post-processing (bloom, speed blur, grade). 1 standard (default): direct render, 2048 shadows. 0 low: 1024 shadows, lower resolution.
   function applyQuality() {
-    const q = W.quality, size = q === 2 ? 2048 : 1024;
+    const q = W.quality, size = q >= 1 ? 2048 : 1024;
     if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     bloom.enabled = q === 2;
     W.resize();
   }
-  W.setQuality = function (q) { if (q === "auto") { W.auto = true; q = 2; } else W.auto = false; W.quality = q; applyQuality(); warm(); };
+  W.setQuality = function (q) { if (q === "auto") { W.auto = true; q = 1; } else W.auto = false; W.quality = q; applyQuality(); warm(); };
   // compile every shader up front, in parallel and off the frame, so nothing stalls the first time it appears
   function warm() { try { (renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve(renderer.compile(scene, camera))).catch(() => {}); } catch {} frames = 0; win = 0; winN = 0; }
   let frames = 0, win = 0, winN = 0;
   W.resize = function () {
     const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight, dpr = devicePixelRatio || 1;
-    const pr = W.quality === 2 ? Math.min(dpr, 1.6) : W.quality === 1 ? Math.min(dpr, 1.25) : Math.min(dpr, 0.9);
+    const pr = W.quality === 2 ? Math.min(dpr, 1.6) : W.quality === 1 ? Math.min(dpr, 1.5) : Math.min(dpr, 1);
     renderer.setPixelRatio(pr); renderer.setSize(w, h, false); composer.setPixelRatio(pr); composer.setSize(w, h);
     bloom.resolution.set(w / 2, h / 2);
     camera.aspect = w / h; camera.updateProjectionMatrix();
@@ -734,7 +727,7 @@ export function createWorld(canvas) {
   W.render = function (dt) {
     stepParticles(dt); stepDebris(dt);
     final.uniforms.uSpeed.value = W.speedFx; final.uniforms.uBoost.value = W.boostFx;
-    if (W.quality > 0) composer.render(dt); else renderer.render(scene, camera);
+    if (W.quality === 2) composer.render(dt); else renderer.render(scene, camera);
     // Auto quality only ever steps down, once, after a sustained slow stretch: no back-and-forth resizes.
     frames++;
     if (W.auto && frames > 180 && dt < 0.25) { win += dt; winN++; if (winN >= 150) { const avg = win / winN; win = 0; winN = 0; if (avg > 0.022 && W.quality > 0) { W.quality--; applyQuality(); W.onQuality?.(W.quality); } } }

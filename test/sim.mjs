@@ -2,6 +2,7 @@
 import { TRACKS, buildTrack, gridPose, BOUNDS, speedProfile } from "../src/track.js";
 import { makeCar, placeCar, stepCar, collideCars, updateTow, CLASSES, respawn } from "../src/physics.js";
 import { makeBrain, drive } from "../src/ai.js";
+import { layout, distToTrack, clearance } from "../src/layout.js";
 
 let fail = 0;
 const bad = (m) => { console.log("  FAIL " + m); fail++; };
@@ -13,6 +14,22 @@ for (const def of TRACKS) {
   let minSelf = 1e9;
   for (let i = 0; i < T.n; i += 2) for (let j = i + 40; j < T.n; j += 2) { if (T.n - j + i < 40) continue; const d = Math.hypot(T.x[i] - T.x[j], T.z[i] - T.z[j]); if (d < minSelf) minSelf = d; }
   if (minSelf < T.width + 16) bad(`track passes ${minSelf.toFixed(1)} m from itself`);
+  // barriers: never closer to another part of the circuit than to their own stretch, never on tarmac
+  let wallBad = 0;
+  for (let i = 0; i < T.n; i += 2) for (const sg of [1, -1]) {
+    const o = sg > 0 ? T.wp[i] : T.wm[i], px = T.x[i] + T.nx[i] * sg * o, pz = T.z[i] + T.nz[i] * sg * o, d = distToTrack(T, px, pz, 1);
+    if (d < o - 1.2 || d < T.half + 1.5) wallBad++;
+  }
+  if (wallBad) bad(`${wallBad} barrier points intrude on another part of the circuit`);
+  // scenery footprints, exactly as world.js draws them, must clear every barrier
+  const L = layout(T), C = clearance(T), clear = (pts, what) => { const m = Math.min(...pts.map(([x, z]) => distToTrack(T, x, z, 1))); if (m < C - 0.5) bad(`${what} is ${m.toFixed(1)} m from the centreline (needs ${C.toFixed(1)})`); };
+  const box = (cx, cz, th, x0, x1, z0, z1) => { const pts = []; for (let u = 0; u <= 8; u++) for (let v = 0; v <= 4; v++) { const lx = x0 + (x1 - x0) * u / 8, lz = z0 + (z1 - z0) * v / 4; pts.push([cx + lx * Math.cos(th) + lz * Math.sin(th), cz - lx * Math.sin(th) + lz * Math.cos(th)]); } return pts; };
+  L.stands.forEach((st, k) => clear(box(st.x, st.z, st.rot, -23, 23, -1.8, 18), `grandstand ${k}`));
+  if (L.pit) clear(box(L.pit.x, L.pit.z, -L.pit.rot + (L.pit.flip ? Math.PI : 0), -57, 57, -8.5, 8.5), "pit building");
+  if (L.screen) { const r = L.screen.rot, pts = []; for (let u = -15; u <= 15; u += 2.5) for (const v of [-1, 1]) pts.push([L.screen.x + Math.cos(r) * u - Math.sin(r) * v, L.screen.z + Math.sin(r) * u + Math.cos(r) * v]); clear(pts, "big screen"); }
+  L.buildings.forEach(([x, z, w, d], k) => clear(box(x, z, 0, -w / 2, w / 2, -d / 2, d / 2), `building ${k}`));
+  L.trees.forEach(([x, z], k) => clear([[x, z]].map(([a, b]) => [a, b]), `tree ${k}`));
+  console.log(`  scenery: ${L.stands.length} grandstands, pit ${L.pit ? "yes" : "no"}, ${L.buildings.length} buildings, ${L.trees.length} trees - all clear`);
   for (const cls of only) {
     T.v = speedProfile(T, cls);
     for (const skill of [0.84, 0.9, 1.0]) {

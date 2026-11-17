@@ -23,7 +23,7 @@ const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("deskgp:" + k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("deskgp:" + k, JSON.stringify(v)); } catch {} },
 };
-const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, bassist: true, sassist: false, gfx: "auto" }, store.get("prefs3", {}));
+const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto" }, store.get("prefs3", {}));
 const savePrefs = () => store.set("prefs3", prefs);
 const me = { id: newId(), name: prefs.name || "", color: prefs.color, num: prefs.num || 0, joined: Date.now() };
 
@@ -97,8 +97,40 @@ function show(name) {
   $("#hud").hidden = name !== "race"; $("#pause").hidden = true; S.paused = false;
   if (name === "menu") renderMenu();
 }
-function setPaused(p) { S.paused = p; $("#pause").hidden = !p; $("#p-title").textContent = S.room?.solo ? "Paused" : "Paused (the race is not)"; }
-const gfxLabel = () => ({ auto: "auto", 2: "high", 1: "medium", 0: "low" })[prefs.gfx];
+function setPaused(p) {
+  S.paused = p; $("#pause").hidden = !p;
+  $("#p-title").textContent = isHost() ? (S.room?.solo ? "Paused" : "Paused for everyone") : "Menu (the race goes on)";
+  hostHold();
+}
+// ---------- pausing: when the host is away (tab hidden) or in the pause menu, the whole session stops ----------
+function hostAway() { return !!(S.paused || document.hidden); }
+function hostHold() {
+  const race = S.race; if (!race || race.demo || !isHost() || race.ended) return;
+  const want = hostAway();
+  if (want === race.held) return;
+  const at = Math.round(netNow());
+  applyHold(want, at);
+  S.room?.net?.send({ t: "hold", on: want, at, n: race.go.n }, { reliable: true });
+}
+function applyHold(on, at) {
+  const race = S.race; if (!race) return;
+  race.holdSeen = performance.now();
+  if (on === race.held) return;
+  if (on) { race.held = true; race.heldAt = at; }
+  else {
+    race.held = false; race.t0 += Math.max(0, at - race.heldAt); // the race clock skips the paused time
+    for (const e of race.cars) { e.snaps.length = 0; e.lastSeen = performance.now(); }
+    acc = 0;
+  }
+  const h = $("#hold"); if (h) { h.hidden = !race.held || (isHost() && S.paused); h.textContent = isHost() ? "Paused" : "Paused \u00b7 waiting for the host to come back"; }
+}
+document.addEventListener("visibilitychange", hostHold);
+setInterval(() => { // keep reminding everyone while held; if the host vanishes mid-pause, carry on without them
+  const race = S.race; if (!race || race.demo) return;
+  if (isHost()) { if (race.held) S.room?.net?.send({ t: "hold", on: true, at: race.heldAt, n: race.go.n }, { reliable: true }); else hostHold(); }
+  else if (race.held && performance.now() - (race.holdSeen || 0) > 8000) applyHold(false, Math.round(netNow()));
+}, 2000);
+const gfxLabel = () => ({ auto: "auto", 2: "high (effects)", 1: "standard", 0: "low" })[prefs.gfx];
 $("#p-resume").onclick = () => setPaused(false);
 $("#p-sound").onclick = () => setSound(!prefs.sound);
 $("#p-gfx").onclick = () => { const order = ["auto", 2, 1, 0]; prefs.gfx = order[(order.indexOf(prefs.gfx) + 1) % 4]; savePrefs(); world.setQuality(prefs.gfx); $("#p-gfx").textContent = `Graphics: ${gfxLabel()}`; };
@@ -127,7 +159,7 @@ $("#join").onclick = () => {
 };
 
 // ---------- room / lobby ----------
-function defaultCfg() { return Object.assign({ track: 0, laps: 5, bots: 7, diff: 1, cls: "gt", dmg: 2, quali: false }, store.get("cfg3", {})); }
+function defaultCfg() { return Object.assign({ track: 0, laps: 5, bots: 7, diff: 1, cls: "gt" }, store.get("cfg4", {}), { dmg: 1, quali: false }); }
 function enterRoom(code, creator) {
   leaveNet();
   me.joined = creator || !code ? 1 : Date.now();
@@ -160,7 +192,7 @@ function isHost() {
 function sendLob(to) { const R = S.room; if (!R?.net || !isHost()) return; R.gotLob = true; R.net.send({ t: "lob", cfg: R.cfg, points: R.points, raceN: R.raceN, phase: R.phase, go: R.phase === "race" ? R.go : null }, { reliable: true, to }); }
 setInterval(() => { const R = S.room; if (!R?.net) return; if (isHost()) sendLob(); else R.net.send({ t: "pi", a: performance.now() }, { to: hostId() }); if (S.screen === "lobby") renderLobby(); }, 2000);
 
-function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; store.set("cfg3", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
+function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; store.set("cfg4", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
 function seg(el, items, cur, onPick) {
   el.innerHTML = items.map(([v, label]) => `<button data-v='${JSON.stringify(v)}' class="${v === cur ? "on" : ""}">${label}</button>`).join("");
   el.onclick = (e) => { const v = e.target.dataset.v; if (v != null) onPick(JSON.parse(v)); };
@@ -202,12 +234,8 @@ function renderLobby() {
   seg($("#o-laps"), [[3, "3 laps"], [5, "5"], [8, "8"], [12, "12"]], R.cfg.laps, pick("laps"));
   seg($("#o-bots"), [0, 3, 5, 7, 9].map((b) => [b, String(b)]), R.cfg.bots, pick("bots"));
   seg($("#o-diff"), DIFFS.map((d, i) => [i, d.name]), R.cfg.diff, pick("diff"));
-  seg($("#o-dmg"), [[0, "Off"], [1, "Visual"], [2, "Full"]], R.cfg.dmg, pick("dmg"));
-  seg($("#o-quali"), [[false, "Off"], [true, "One-shot"]], R.cfg.quali, pick("quali"));
   const mine = (k, v) => { prefs[k] = v; savePrefs(); audio.fx("click"); renderLobby(); };
   seg($("#a-line"), [[0, "Off"], [1, "Corners"], [2, "Full"]], prefs.line, (v) => mine("line", v));
-  seg($("#a-brake"), [[false, "Off"], [true, "On"]], prefs.bassist, (v) => mine("bassist", v));
-  seg($("#a-steer"), [[false, "Off"], [true, "On"]], prefs.sassist, (v) => mine("sassist", v));
   $("#lobby .panel").querySelectorAll(".cols > div:last-child").forEach((d) => d.classList.toggle("locked", !host));
   $("#start").hidden = !host; $("#start").disabled = mem.length + nb < 1;
   $("#start").textContent = R.cfg.quali ? "Start qualifying" : R.raceN ? "Next race" : "Lights out";
@@ -252,6 +280,7 @@ function onMsg(from, m) {
     case "em": if (race) { world.emote(m.id, EMOTES[m.e] || ""); audio.fx("emote"); } break;
     case "tk": { const e = race?.byId.get(m.id); if (e) { e.kind = "b"; e.skill = 0.9; feed(`${esc(e.code)}: autopilot takes over`); } break; }
     case "res": if (from === hostId() && race && !race.demo) showResults(m); break;
+    case "hold": if (from === hostId() && race && !race.demo && race.go.n === m.n) applyHold(m.on, m.at); break;
   }
 }
 
@@ -272,7 +301,7 @@ function startRace(go, demo) {
   T.v = speedProfile(T, cls);
   if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; }
   audio.mode = cls.id === "f1" ? "v6" : "ev";
-  const race = S.race = { go, demo: !!demo, T, cls, quali, laps: quali ? QUALI_LAPS : go.cfg.laps, dmg: go.cfg.dmg ?? 2, t0: go.at + 5000 + go.hold, cars: [], byId: new Map(), mine: null, state: "pre", order: [], firstFin: null, lightsN: -1, sendT: 0, hudT: 0, monT: 0, bestLap: null, bestBy: null, spect: false, yellowT: [-99, -99, -99], drsOn: quali, rcQ: [], outHits: [] };
+  const race = S.race = { go, demo: !!demo, T, cls, quali, laps: quali ? QUALI_LAPS : go.cfg.laps, dmg: 1, t0: go.at + 5000 + go.hold, cars: [], byId: new Map(), mine: null, state: "pre", order: [], firstFin: null, lightsN: -1, sendT: 0, hudT: 0, monT: 0, bestLap: null, bestBy: null, spect: false, yellowT: [-99, -99, -99], drsOn: true, rcQ: [], outHits: [], held: false, heldAt: 0 };
   if (quali) race.t0 = go.at + 3500;
   go.grid.forEach((g, i) => {
     const c = makeCar(g.id, cls), pose = quali ? gridPose(T, i * 3) : gridPose(T, i); placeCar(c, pose); c.total = pose.i - T.n; c.dents = [];
@@ -360,8 +389,7 @@ function onLap(e, lt, rt, fin, remote, inv) {
     e.fin = true; e.finT = rt; if (race.firstFin == null && !race.quali) { race.firstFin = rt; if (!race.demo) raceControl("CHEQUERED FLAG", true, true); }
   }
   if (e === race.mine && !remote) {
-    if (inv && timed) toast(`LAP TIME DELETED · ${fmt(lt)}`, "r");
-    else if (fastest && timed && e.lapsDone > 1) { toast(`FASTEST LAP ${fmt(lt)}`, "p"); audio.fx("best"); }
+    if (fastest && timed && e.lapsDone > 1) { toast(`FASTEST LAP ${fmt(lt)}`, "p"); audio.fx("best"); }
     else if (pbLap && timed) { toast(`PERSONAL BEST ${fmt(lt)}`, "g"); audio.fx("lap"); }
     else if (timed) { toast(`Lap ${fmt(lt)}`); audio.fx("lap"); }
     const key = `pb3:${race.T.id}:${race.cls.id}`, old = store.get(key, null);
@@ -394,7 +422,6 @@ function simStep(race, now) {
   if (green && race.state === "pre") { race.state = "run"; }
   const all = race.cars, phys = all.map((e) => e.c), host = isHost(), dmg = race.dmg;
   const leaderLaps = Math.max(0, ...all.map((e) => e.lapsDone));
-  if (!race.quali && !race.drsOn && leaderLaps >= 2 && !race.demo) { race.drsOn = true; raceControl("DRS ENABLED", true, true); }
   for (const e of all) {
     const c = e.c;
     if (e.hide) continue;
@@ -403,11 +430,7 @@ function simStep(race, now) {
     let inp;
     if (e === race.mine && !e.fin && !S.boss && !c.retired) {
       inp = S.paused ? { steer: 0, thr: 0, brk: 0 } : readInput();
-      // start: throttle once all five lights are on and before they go out is a jump start
-      if (!green && !race.quali && inp.thr > 0 && raceT > -race.go.hold / 1000 - 0.05 && !race.jump) { race.jump = true; }
-      if (green && race.firstThr == null && inp.thr > 0) { race.firstThr = raceT; if (!race.quali && !race.jump) reaction(raceT); if (race.jump) penalise(e, `${e.code} 5 SECOND TIME PENALTY · JUMP START`, 5); }
-      if (prefs.bassist && green) { const ai = wrap(c.idx + Math.round((3 + c.speed * 0.16) / T.step), n), target = T.v[ai] * 1.03; if (c.speed > target + 1 && inp.brk < 0.5) { const b = clamp((c.speed - target) * 0.16, 0, 0.9); inp.brk = Math.max(inp.brk, b); inp.thr *= 1 - b; } }
-      if (prefs.sassist && green) { const want = pursuit(c, T); inp.steer = clamp(inp.steer === 0 ? want * 0.7 : inp.steer * 0.55 + want * 0.45, -1, 1); }
+      if (green && race.firstThr == null && inp.thr > 0) { race.firstThr = raceT; if (!race.quali) reaction(raceT); }
     } else {
       if (!e.br) e.br = e === race.mine ? race.autoBrain : makeBrain(e.skill || 0.9, e.seed ?? Math.random());
       const br = e.br;
@@ -416,7 +439,7 @@ function simStep(race, now) {
         let hs = 0, hn = 0; for (const o of all) if (o.kind === "h" && !o.gone) { hs += o.c.total; hn++; }
         if (hn) br.band = 1 + clamp((hs / hn - c.total) * T.step / 6000, -0.025, 0.03);
       }
-      inp = green ? drive(c, br, T, phys, DT, raceT, { yellow: yellowIn(race, sectorOf(race, c), raceT) }) : { steer: 0, thr: 0, brk: 0, direct: true };
+      inp = green ? drive(c, br, T, phys, DT, raceT) : { steer: 0, thr: 0, brk: 0, direct: true };
       if (inp.respawn) respawn(c, T);
     }
     // DRS: armed if within one second of the car ahead at the detection point
@@ -429,7 +452,7 @@ function simStep(race, now) {
         e.drsArm[k] = race.quali || gap < 1.0;
       }
     }
-    inp.drsOk = zi >= 0 && (race.quali || (race.drsOn && e.drsArm[zi] && !yellowIn(race, T.sector(T.drsZones[zi].a), raceT)));
+    inp.drsOk = zi >= 0 && (race.quali || !!e.drsArm[zi]);
     e.drsReady = zi >= 0 ? inp.drsOk : (race.drsOn || race.quali) && T.drsZones.some((z, k) => e.drsArm[k] && wrap(z.a - c.idx, n) < 120);
     updateTow(c, phys);
     e.prevIdx = c.idx;
@@ -438,15 +461,6 @@ function simStep(race, now) {
     stepCar(c, inp, DT, T, { damage: race.demo ? 0 : dmg });
     if (e === race.mine && c.drs && !wasDrs) audio.fx("drs");
     if (race.demo) { c.hits.length = 0; } else flushHits(race, e);
-    // track limits: all four wheels beyond the white line
-    if (!race.demo && c.tl && !e.wasTl && c.speed > 12 && c.respawned <= 0 && raceT > 1) {
-      e.wasTl = true; e.inv = true; e.tlN++;
-      if (race.quali) { if (e === race.mine) toast("TRACK LIMITS · LAP TIME DELETED", "r"); }
-      else if (e.tlN < 3) penalise(e, `${e.code} TRACK LIMITS · WARNING ${e.tlN} OF 3 · LAP TIME DELETED`, 0, { tl: e.tlN });
-      else if (e.tlN === 3) { penalise(e, `BLACK AND WHITE FLAG · ${e.code} · TRACK LIMITS`, 0, { tl: e.tlN }); if (e === race.mine) race.bwT = raceT; }
-      else if ((e.tlN - 4) % 2 === 0) penalise(e, `${e.code} 5 SECOND TIME PENALTY · TRACK LIMITS`, 5, { tl: e.tlN });
-    }
-    if (!c.tl && Math.abs(c.lat) < T.half) e.wasTl = false;
     // retirement
     if (c.retired && !e.ret) { e.ret = true; e.retT = raceT; if (!race.demo) penalise(e, `${e.code} RETIRED · ACCIDENT DAMAGE`, 0); if (e === race.mine) { big("RETIRED", "ACCIDENT DAMAGE"); audio.fx("lost"); } }
     if (e.ret && raceT - e.retT > 10) { e.hide = true; c.hidden = true; } // marshals recover the car
@@ -472,24 +486,6 @@ function simStep(race, now) {
       if (race.demo) { a.c.hits.length = 0; b.c.hits.length = 0; continue; }
       flushHits(race, a); if (bo) flushHits(race, b);
       if ((a === race.mine || b === race.mine) && r.hit > 0.1) { world.sparks((a.c.x + b.c.x) / 2, (a.c.z + b.c.z) / 2, 6 + r.hit * 16); world.shake(0.2 + r.hit * 0.7); audio.fx(r.hit > 0.4 ? "crash" : "bump", 0.4 + r.hit * 0.6); }
-      if (r.rvn < -7 && raceT > 3) { fault(a, b, now); if (bo) fault(b, a, now); }
-    }
-  }
-  // yellow flags: a stopped, spun, recovering or retired car marks its sector for five seconds
-  for (const e of all) {
-    if (e.hide || e.fin) continue; const c = e.c;
-    if ((raceT > 6 && c.speed < 7 && c.total > 0) || c.retired || c.respawned > 0) race.yellowT[sectorOf(race, c)] = raceT;
-  }
-  // overtaking under yellow
-  if (!race.quali && !race.demo) for (const e of all) {
-    if (!owns(e) || e.hide || e.fin || e.kind !== "h") continue; // the AI holds position under yellows instead
-    for (const o of all) {
-      if (o === e || o.hide) continue;
-      const d = e.c.total - o.c.total, prev = e.rel[o.id];
-      e.rel[o.id] = d;
-      if (prev != null && prev < 0 && d >= 0 && d < 20 && o.c.speed > 22 && !o.c.retired && yellowIn(race, sectorOf(race, e.c), raceT) && raceT - (e.yPen || -99) > 8) {
-        e.yPen = raceT; penalise(e, `${e.code} 5 SECOND TIME PENALTY · OVERTAKING UNDER YELLOW FLAGS`, 5);
-      }
     }
   }
   // dropped drivers: the host hands their car to the autopilot
@@ -498,12 +494,6 @@ function simStep(race, now) {
       e.kind = "b"; e.skill = 0.9; S.room.net.send({ t: "tk", id: e.id }, { reliable: true }); feed(`${esc(e.code)}: autopilot takes over`);
     }
   }
-}
-// x ran into the back of y: x is to blame
-function fault(x, y, now) {
-  const fx = Math.cos(y.c.h), fz = Math.sin(y.c.h);
-  const rel = (x.c.x - y.c.x) * fx + (x.c.z - y.c.z) * fz, closing = (x.c.vx - y.c.vx) * fx + (x.c.vz - y.c.vz) * fz;
-  if (rel < -1.2 && closing > 6 && now - (x.lastPen || 0) > 6000) { x.lastPen = now; penalise(x, `${x.code} 5 SECOND TIME PENALTY · CAUSING A COLLISION WITH ${y.code}`, 5); }
 }
 function flushHits(race, e) {
   const c = e.c; if (!c.hits.length) return;
@@ -539,8 +529,7 @@ function reaction(t) {
 function recover() {
   const race = S.race, m = race?.mine; if (!m || race.state !== "run" || m.fin || m.c.retired) return;
   const c = m.c;
-  if (c.speed < 8 || c.surf === 2 || c.wrong > 0.5) { respawn(c, race.T); toast("Recovered to the circuit", "r"); }
-  else toast("Recovery is only for when you are stopped, beached or facing the wrong way");
+  respawn(c, race.T); toast("Back on track", "r");
 }
 function emote(i) { const race = S.race; if (!race?.mine || performance.now() - (race.emT || 0) < 900) return; race.emT = performance.now(); world.emote(me.id, EMOTES[i]); audio.fx("emote"); S.room?.net?.send({ t: "em", id: me.id, e: i }, { reliable: true }); }
 
@@ -608,24 +597,10 @@ function updateHud(race, dt, now) {
     const ref = race.pb.prof[Math.floor(wrap(c.total, T.n) / 8)];
     if (ref != null && ref > 0) { const dv = raceT - view.lapStart - ref; d = (dv >= 0 ? "+" : "−") + Math.abs(dv).toFixed(2); setClass("#delta", "neg", dv < 0); setClass("#delta", "posv", dv >= 0); }
   }
-  if (view.inv && !view.fin && raceT > 0) { d = "LAP DELETED"; setClass("#delta", "posv", true); setClass("#delta", "neg", false); }
   setText("#delta", d);
-  // damage diagram and penalty
-  if (view === race.mine) {
-    const D = c.dmg, key = [D.f, D.r, D.l, D.rt, D.e].map((x) => Math.round(x * 10)).join() + c.retired;
-    if (hudCache.dmg !== key) { hudCache.dmg = key; for (const [k, v] of Object.entries(D)) { const el = $("#d-" + k); if (el) el.style.fill = c.retired ? "#555" : dmgColor(v); } }
-    setText("#pen", view.pen ? `+${view.pen}s PEN` : view.tlN ? `TL ${view.tlN}/3` : "");
-  }
-  // flags
-  let flag = "", ftxt = "";
-  const mySec = sectorOf(race, c);
-  if (!race.quali && race.firstFin != null) { flag = "chq"; ftxt = "CHEQUERED FLAG"; }
-  else if (yellowIn(race, mySec, raceT) && raceT > 0) { flag = "yellow"; ftxt = `YELLOW · SECTOR ${mySec + 1}`; }
-  else if (race.bwT != null && raceT - race.bwT < 6 && view === race.mine) { flag = "bw"; ftxt = "TRACK LIMITS"; }
-  else if (!race.quali && view === race.mine) for (const o of race.cars) { if (o === view || o.hide) continue; const ahead = o.c.total - c.total, behind = wrap(c.total - o.c.total, T.n) * T.step; if (ahead > T.n * 0.5 && behind > 0 && behind < 70) { flag = "blue"; ftxt = "BLUE FLAG · LET THEM BY"; break; } }
-  if (hudCache.flag !== flag + ftxt) { hudCache.flag = flag + ftxt; const f = $("#flags"); f.hidden = !flag; f.className = flag; $("#flagtext").textContent = ftxt; if (flag === "yellow" || flag === "blue") audio.fx("rc"); }
-  // marshal light panels
-  const fl = [0, 1, 2].map((s) => (yellowIn(race, s, raceT) && raceT > 0 ? 1 : 0)); const fk = fl.join(); if (hudCache.mflags !== fk) { hudCache.mflags = fk; world.setFlags(fl); }
+  // the only flag shown: the chequered flag
+  const flag = !race.quali && race.firstFin != null ? "chq" : "";
+  if (hudCache.flag !== flag) { hudCache.flag = flag; const f = $("#flags"); f.hidden = !flag; f.className = flag; $("#flagtext").textContent = flag ? "CHEQUERED FLAG" : ""; }
   // race control banner
   if (race.rcQ.length && !race.rcShow) { race.rcShow = race.rcQ.shift(); race.rcT = 3.6; $("#rctext").textContent = race.rcShow; const b = $("#rc"); b.hidden = false; b.style.animation = "none"; void b.offsetWidth; b.style.animation = ""; }
   if (race.rcShow) { race.rcT -= dt; if (race.rcT <= 0) { race.rcShow = null; $("#rc").hidden = true; } }
@@ -721,9 +696,8 @@ function frame(t) {
   const dt = Math.min(0.25, (t - last) / 1000); last = t;
   const race = S.race;
   if (!race) { world.updateCamera(null, 0, dt); world.render(dt); return; }
-  if (S.paused && S.room?.solo && !race.demo) { race.t0 += dt * 1000; acc = 0; } // solo: pausing stops the clock
-  const now = netNow();
-  const frozen = S.paused && S.room?.solo && !race.demo;
+  const frozen = race.held && !race.demo;
+  const now = frozen ? race.heldAt : netNow();
   if (!frozen) {
     acc += dt; let steps = 0;
     while (acc >= DT && steps < 30) { simStep(race, now - (acc - DT) * 1000); acc -= DT; steps++; }
@@ -764,7 +738,7 @@ function frame(t) {
     // network: my cars at 30 Hz direct (20 Hz when relayed), dents as they happen
     race.sendT -= dt;
     const net = S.room?.net;
-    if (net && net.peers.size) {
+    if (net && net.peers.size && !race.held) {
       if (race.outHits.length) { net.send({ t: "hit", h: race.outHits.splice(0) }, { reliable: true }); }
       if (race.sendT <= 0) {
         race.sendT = net.direct() === net.peers.size ? 1 / 30 : 0.05; const arr = [];
@@ -778,8 +752,6 @@ function frame(t) {
   world.render(dt);
 }
 world.onDetach = (id) => { if (S.race?.mine?.id === id) audio.fx("part"); };
-// keep the AI and the clock going (slowly) if the host's tab is in the background
-setInterval(() => { if (document.hidden && S.race && !S.race.demo && !(S.paused && S.room?.solo)) { const now = netNow(); for (let i = 0; i < 24; i++) simStep(S.race, now - (24 - i) * DT * 1000); updateOrder(S.race); hostFinish(S.race, (now - S.race.t0) / 1000); last = performance.now(); } }, 200);
 
 show("menu"); startDemo();
 requestAnimationFrame(frame);

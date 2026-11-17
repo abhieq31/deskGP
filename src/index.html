@@ -30,7 +30,6 @@
   <div id="toasts"></div>
   <div id="wrong" hidden>WRONG WAY</div>
   <div id="feed"></div>
-  <div id="dmg"><svg viewBox="0 0 60 110" aria-label="Car damage"><rect id="d-f" x="14" y="4" width="32" height="20" rx="6"/><rect id="d-l" x="6" y="28" width="12" height="50" rx="4"/><rect id="d-rt" x="42" y="28" width="12" height="50" rx="4"/><rect id="d-e" x="20" y="34" width="20" height="38" rx="4"/><rect id="d-r" x="14" y="82" width="32" height="22" rx="6"/></svg><span id="pen"></span></div>
   <div id="dash">
     <div id="rpm"></div>
     <div id="speedrow"><span id="gear">1</span><span id="speed">0</span><span id="unit">km/h</span></div>
@@ -39,6 +38,7 @@
   </div>
   <div id="mapwrap"><canvas id="map" width="440" height="300"></canvas></div>
   <div id="spect" hidden></div>
+  <div id="hold" hidden>Paused</div>
   <div id="keys">WASD / arrows drive &middot; Space ERS &middot; C camera &middot; R recover &middot; M mute &middot; 1-4 emotes &middot; Esc pause</div>
   <div id="touch" hidden>
     <button id="t-left" aria-label="Steer left">&#9664;</button><button id="t-right" aria-label="Steer right">&#9654;</button>
@@ -77,11 +77,9 @@
         <div class="small">ENTRY LIST</div>
         <div id="players"></div>
         <div class="small" id="netstat"></div>
-        <div class="small" style="margin-top:14px">YOUR ASSISTS</div>
+        <div class="small" style="margin-top:14px">YOUR VIEW</div>
         <div class="opts one">
           <div class="opt"><span>Racing line</span><div class="seg" id="a-line"></div></div>
-          <div class="opt"><span>Braking assist</span><div class="seg" id="a-brake"></div></div>
-          <div class="opt"><span>Steering assist</span><div class="seg" id="a-steer"></div></div>
         </div>
       </div>
       <div>
@@ -92,8 +90,6 @@
           <div class="opt"><span>Race distance</span><div class="seg" id="o-laps"></div></div>
           <div class="opt"><span>AI drivers</span><div class="seg" id="o-bots"></div></div>
           <div class="opt"><span>AI level</span><div class="seg" id="o-diff"></div></div>
-          <div class="opt"><span>Damage</span><div class="seg" id="o-dmg"></div></div>
-          <div class="opt"><span>Qualifying</span><div class="seg" id="o-quali"></div></div>
         </div>
       </div>
     </div>

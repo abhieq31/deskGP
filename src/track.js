@@ -1,34 +1,28 @@
 // Track geometry: closed spline -> uniform samples, racing line, speed profile, lookups.
 // Plane coordinates are (x, z). Heading h: forward = (cos h, sin h). "Right" = (-sin h, cos h).
 
-export const DESK = { hx: 520, hz: 330 };
+// Units are metres. The circuits fit in a 1040 x 660 m box.
+export const BOUNDS = { hx: 520, hz: 330 };
+export const DESK = BOUNDS;
 export const STEP = 2;
-
-// Grip model shared by physics and the AI speed profile.
-export const GRIP0 = 19, GRIPK = 0.0032;
-export const gripAt = (v) => GRIP0 + GRIPK * v * v;
-
-/* Prop footprints (desk units; 1 unit is about 1.6 mm of real desk):
-   mug r27 - keyboard 275x87 - mouse 38x66 - monitor base 150x100 - phone 46x94
-   pad 47x47 - pen 90x5 - plant r34 - stapler 100x26 - lamp r40 - notebook 130x180 - donut r26 */
 export const TRACKS = [
   {
-    id: "standup", name: "Silverline Circuit", mood: "day", width: 14,
+    id: "silverline", name: "Silverline Circuit", mood: "day", width: 14, country: "GB",
     blurb: "Fast and flowing. A long pit straight, a sweeping back section and one tight loop to get wrong.",
     pts: [[-260, 178], [0, 182], [240, 178], [345, 150], [385, 70], [350, -10], [270, -45], [180, -20], [90, -60], [-10, -25],
       [-120, -60], [-200, -130], [-250, -215], [-340, -235], [-410, -170], [-390, -80], [-320, -20], [-400, 50], [-410, 130], [-340, 180]],
     drs: [[0.0, 0.2]],
   },
   {
-    id: "deadline", name: "Harbour Lights", mood: "night", width: 13,
-    blurb: "A night race under floodlights. Tight, technical, and the walls are close.",
+    id: "harbour", name: "Harbour Lights Street Circuit", mood: "night", width: 13, street: true, country: "SG",
+    blurb: "Night street race. Concrete walls a metre from the white line, city towers all round, no room for mistakes.",
     pts: [[-150, 205], [80, 210], [250, 200], [330, 235], [420, 215], [440, 130], [370, 80], [300, 10], [380, -60], [440, -150],
       [380, -240], [280, -250], [230, -170], [160, -120], [70, -160], [20, -250], [-70, -270], [-110, -190], [-40, -110], [-60, -40],
       [-160, -60], [-250, -120], [-340, -250], [-430, -230], [-440, -120], [-380, -40], [-420, 60], [-380, 160], [-280, 190]],
     drs: [[0.0, 0.11]],
   },
   {
-    id: "replyall", name: "Sunset Ridge", mood: "sunset", width: 15,
+    id: "ridge", name: "Sunset Ridge", mood: "sunset", width: 15, country: "US",
     blurb: "Golden hour. Two long DRS straights, two hairpins, and a lot of slipstream.",
     pts: [[-330, 255], [0, 262], [330, 255], [440, 215], [455, 120], [380, 80], [290, 120], [200, 160], [140, 95], [200, 20],
       [330, -20], [440, -80], [450, -200], [360, -270], [180, -275], [0, -200], [-180, -275], [-360, -270], [-450, -190], [-430, -80],
@@ -37,10 +31,6 @@ export const TRACKS = [
   },
 ];
 
-export const PROP_SHAPES = {
-  mug: { r: 27 }, keyboard: { w: 275, d: 87 }, mouse: { w: 38, d: 66 }, monitor: { w: 150, d: 100 }, phone: { w: 46, d: 94 },
-  pad: { w: 47, d: 47 }, pen: { w: 90, d: 6 }, plant: { r: 34 }, stapler: { w: 100, d: 26 }, lamp: { r: 40 }, notebook: { w: 130, d: 180 }, donut: { r: 26 },
-};
 
 function catmull(p0, p1, p2, p3, t) {
   // centripetal Catmull-Rom (Barry-Goldman)
@@ -132,36 +122,43 @@ export function buildTrack(def) {
   const lf = frame(T.lx, T.lz);
   T.lk = smoothCyclic(lf.k, 2, 1);
 
-  // Speed profile along the racing line (m/s) for a driver on the limit.
-  const VTOP = 96, v = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const kk = Math.abs(T.lk[i]) / 0.87;
-    v[i] = kk > GRIPK + 1e-4 ? Math.min(VTOP, Math.sqrt(GRIP0 / (kk - GRIPK))) : VTOP;
-  }
-  for (let pass = 0; pass < 2; pass++) for (let i = n - 1; i >= 0; i--) {
-    const nxt = v[(i + 1) % n], brake = Math.min(28, gripAt(nxt)) * 0.62 + 0.0016 * nxt * nxt;
-    v[i] = Math.min(v[i], Math.sqrt(nxt * nxt + 2 * brake * step));
-  }
-  T.v = v;
+  T.vc = {};
 
   // zones
   T.drs = new Uint8Array(n);
   for (const [a, b] of def.drs || []) for (let i = Math.floor(a * n); i < Math.floor(b * n); i++) T.drs[wrap(i, n)] = 1;
   // barrier offsets each side (pulled in on the inside of tight corners so the wall never folds over itself)
-  const wp = new Float32Array(n), wm = new Float32Array(n), WALL = 21;
+  const wp = new Float32Array(n), wm = new Float32Array(n), WALL = def.street ? T.half + 3.6 : 21;
   for (let i = 0; i < n; i++) {
-    const kk = T.k[i], inner = Math.max(T.half + 5, Math.min(WALL, 0.72 / (Math.abs(kk) + 1e-6)));
+    const kk = T.k[i], inner = Math.max(Math.min(WALL, T.half + 5), Math.min(WALL, 0.72 / (Math.abs(kk) + 1e-6)));
     wp[i] = kk > 0 ? inner : WALL; wm[i] = kk < 0 ? inner : WALL;
   }
   T.wp = smoothCyclic(wp, 6, 2); T.wm = smoothCyclic(wm, 6, 2);
-  T.pads = (def.pads || []).map(([s, o]) => { const i = Math.floor(s * n); return { i, x: x[i] + T.nx[i] * o, z: z[i] + T.nz[i] * o, h: Math.atan2(T.tz[i], T.tx[i]) }; });
-  T.spills = (def.spills || []).map(([s, o, r]) => { const i = Math.floor(s * n); return { i, x: x[i] + T.nx[i] * o, z: z[i] + T.nz[i] * o, r }; });
-  T.colliders = (def.props || []).map((p) => {
-    const sh = PROP_SHAPES[p.t];
-    return sh.r ? { c: 1, x: p.x, z: p.z, r: sh.r } : { c: 0, x: p.x, z: p.z, hw: sh.w / 2, hd: sh.d / 2, cos: Math.cos(p.rot || 0), sin: Math.sin(p.rot || 0) };
-  });
+  // DRS: one detection point 120 m before each activation zone
+  T.drsZones = (def.drs || []).map(([a, b]) => ({ a: wrap(Math.floor(a * n), n), b: wrap(Math.floor(b * n), n), det: wrap(Math.floor(a * n) - 60, n) }));
+  T.sector = (i) => Math.min(2, Math.floor(wrap(i, n) / n * 3));
   T.heading = (i) => Math.atan2(T.tz[i], T.tx[i]);
   return T;
+}
+
+// Speed profile along the racing line (m/s) for a car class driven on the limit; cached per class.
+export function speedProfile(T, cls) {
+  if (T.vc[cls.id]) return T.vc[cls.id];
+  const n = T.n, v = new Float32Array(n), g = (s) => cls.g0 + cls.gk * s * s, VT = cls.vtop + 6;
+  for (let i = 0; i < n; i++) {
+    // direction changes (S-bends) cost speed too: the car cannot flip its yaw instantly
+    const kk = (Math.abs(T.lk[i]) + 0.35 * Math.abs(T.lk[wrap(i + 12, n)] - T.lk[wrap(i - 12, n)])) / (cls.margin || 0.86);
+    v[i] = kk > cls.gk + 1e-5 ? Math.min(VT, Math.sqrt(cls.g0 / (kk - cls.gk))) : VT;
+  }
+  for (let pass = 0; pass < 2; pass++) for (let i = n - 1; i >= 0; i--) {
+    const nxt = v[(i + 1) % n], brake = Math.min(cls.brake, g(nxt)) * 0.62 + cls.drag * nxt * nxt;
+    v[i] = Math.min(v[i], Math.sqrt(nxt * nxt + 2 * brake * T.step));
+  }
+  // braking points: where the profile starts falling by more than 15 m/s
+  const bz = [];
+  for (let i = 0; i < n; i++) { const a = v[i], p = v[wrap(i - 1, n)]; if (p >= a + 0.05 && v[wrap(i - 2, n)] < p + 0.05 && a - v[wrap(i + 70, n)] > 15) bz.push(i); }
+  T.vc[cls.id] = v; v.brakeAt = bz;
+  return v;
 }
 
 // nearest sample in a window around a hint (O(1) per car per step)

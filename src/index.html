@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>DeskGP - electric racing from your desk</title>
-<meta name="description" content="Electric sedans on proper circuits. Race colleagues with a room code, or bots when you are alone. Runs in the browser, nothing to install.">
+<title>DeskGP - Grand Prix racing in your browser</title>
+<meta name="description" content="Grand Prix racing in the browser: start lights, DRS, track limits, penalties and damage. Race friends with a room code or the AI grid.">
 <meta name="theme-color" content="#0b0d12">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0d12'/%3E%3Cpath d='M10 40h44l-6-12H26l-6 6h-10z' fill='%23ff2d2d'/%3E%3Ccircle cx='20' cy='42' r='7' fill='%23fff'/%3E%3Ccircle cx='46' cy='42' r='7' fill='%23fff'/%3E%3C/svg%3E">
 <style>
@@ -16,47 +16,53 @@
 <div id="speedfx"></div>
 
 <div id="hud" hidden>
-  <div id="tower"></div>
+  <div id="tower"><div id="towerhead"><b id="lapn">LAP 1/5</b></div><div id="towerrows"></div></div>
   <div id="topc">
-    <div id="lapbox"><span id="lapn">LAP 1/3</span><span id="pos">P1</span></div>
+    <div id="lapbox"><span id="sess">RACE</span><span id="pos">P1</span></div>
     <div id="laptime">0:00.000</div>
     <div id="delta"></div>
     <div id="sectors"><i></i><i></i><i></i></div>
   </div>
+  <div id="rc" hidden><b>RACE CONTROL</b><span id="rctext"></span></div>
+  <div id="flags" hidden><i id="flagicon"></i><span id="flagtext"></span></div>
   <div id="startlights"><i></i><i></i><i></i><i></i><i></i></div>
   <div id="big"></div>
   <div id="toasts"></div>
   <div id="wrong" hidden>WRONG WAY</div>
   <div id="feed"></div>
+  <div id="dmg"><svg viewBox="0 0 60 110" aria-label="Car damage"><rect id="d-f" x="14" y="4" width="32" height="20" rx="6"/><rect id="d-l" x="6" y="28" width="12" height="50" rx="4"/><rect id="d-rt" x="42" y="28" width="12" height="50" rx="4"/><rect id="d-e" x="20" y="34" width="20" height="38" rx="4"/><rect id="d-r" x="14" y="82" width="32" height="22" rx="6"/></svg><span id="pen"></span></div>
   <div id="dash">
     <div id="rpm"></div>
     <div id="speedrow"><span id="gear">1</span><span id="speed">0</span><span id="unit">km/h</span></div>
-    <div id="badges"><b id="b-drs">DRS</b><b id="b-tow">TOW</b><b id="b-cafe">BOOST</b></div>
+    <div id="badges"><b id="b-drs">DRS</b><b id="b-tow">TOW</b><b id="b-ers">ERS</b></div>
     <div id="energy"><i></i></div>
   </div>
   <div id="mapwrap"><canvas id="map" width="440" height="300"></canvas></div>
   <div id="spect" hidden></div>
-  <div id="keys">WASD / arrows drive &middot; Space boost &middot; R reset &middot; C camera &middot; M mute &middot; B boss key &middot; 1-4 emotes &middot; Esc menu</div>
+  <div id="keys">WASD / arrows drive &middot; Space ERS &middot; C camera &middot; R recover &middot; M mute &middot; 1-4 emotes &middot; Esc pause</div>
   <div id="touch" hidden>
     <button id="t-left" aria-label="Steer left">&#9664;</button><button id="t-right" aria-label="Steer right">&#9654;</button>
-    <button id="t-boost" aria-label="Boost">&#9889;</button><button id="t-brake" aria-label="Brake">BRAKE</button><button id="t-gas" aria-label="Accelerate">GO</button>
+    <button id="t-boost" aria-label="ERS boost">&#9889;</button><button id="t-brake" aria-label="Brake">BRAKE</button><button id="t-gas" aria-label="Accelerate">GO</button>
   </div>
 </div>
 
 <div id="menu" class="screen">
   <div class="panel home">
     <h1 class="logo">DESK<span>GP</span></h1>
-    <p class="tag">Electric. Instant torque. Race from your desk.</p>
-    <label class="field"><span>Driver name</span><input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Your name"></label>
+    <p class="tag">Lights out and away we go.</p>
+    <div class="row2">
+      <label class="field"><span>Driver name</span><input id="name" maxlength="18" autocomplete="off" spellcheck="false" placeholder="Your name"></label>
+      <label class="field num"><span>No.</span><input id="num" maxlength="2" inputmode="numeric" autocomplete="off" placeholder="44"></label>
+    </div>
     <div class="field"><span>Livery</span><div id="colors"></div></div>
     <div class="btns">
-      <button id="solo" class="primary">Race the bots</button>
+      <button id="solo" class="primary">Grand Prix vs AI</button>
       <button id="create">Create a room</button>
     </div>
     <div class="joinrow"><input id="code" maxlength="9" autocomplete="off" spellcheck="false" placeholder="ROOM CODE"><button id="join">Join</button></div>
     <p id="menuerr" class="err"></p>
     <p class="career" id="career"></p>
-    <p class="fine">Send the code to colleagues: up to 8 drivers, bots fill the grid. Arrow keys or WASD, Space for boost. <b>B</b> is the boss key.</p>
+    <p class="fine">Share the room code: up to 10 cars, AI drivers fill the grid. Arrows or WASD to drive, Space for ERS. Gamepad and touch work too.</p>
   </div>
 </div>
 
@@ -68,50 +74,58 @@
     </div>
     <div class="cols">
       <div>
-        <div class="small">GRID</div>
+        <div class="small">ENTRY LIST</div>
         <div id="players"></div>
         <div class="small" id="netstat"></div>
+        <div class="small" style="margin-top:14px">YOUR ASSISTS</div>
+        <div class="opts one">
+          <div class="opt"><span>Racing line</span><div class="seg" id="a-line"></div></div>
+          <div class="opt"><span>Braking assist</span><div class="seg" id="a-brake"></div></div>
+          <div class="opt"><span>Steering assist</span><div class="seg" id="a-steer"></div></div>
+        </div>
       </div>
       <div>
         <div class="small">CIRCUIT</div>
         <div id="tracks"></div>
         <div class="opts">
-          <div class="opt"><span>Laps</span><div class="seg" id="o-laps"></div></div>
-          <div class="opt"><span>Bots</span><div class="seg" id="o-bots"></div></div>
-          <div class="opt"><span>Bot pace</span><div class="seg" id="o-diff"></div></div>
-          <div class="opt"><span>Teams</span><div class="seg" id="o-teams"></div></div>
+          <div class="opt"><span>Car</span><div class="seg" id="o-cls"></div></div>
+          <div class="opt"><span>Race distance</span><div class="seg" id="o-laps"></div></div>
+          <div class="opt"><span>AI drivers</span><div class="seg" id="o-bots"></div></div>
+          <div class="opt"><span>AI level</span><div class="seg" id="o-diff"></div></div>
+          <div class="opt"><span>Damage</span><div class="seg" id="o-dmg"></div></div>
+          <div class="opt"><span>Qualifying</span><div class="seg" id="o-quali"></div></div>
         </div>
       </div>
     </div>
-    <div class="lobbyfoot"><span id="lobbymsg"></span><button id="start" class="primary">Start race</button></div>
+    <div class="lobbyfoot"><span id="lobbymsg"></span><button id="start" class="primary">Start</button></div>
   </div>
 </div>
 
 <div id="results" class="screen" hidden>
   <div class="panel wide">
-    <div class="small" id="res-sub">RACE RESULT</div>
-    <h2 id="res-title">Employee of the Month</h2>
+    <div class="small" id="res-sub">CLASSIFICATION</div>
+    <h2 id="res-title">Race winner</h2>
     <div id="res-table"></div>
-    <div id="res-teams"></div>
     <div class="lobbyfoot"><span id="res-msg"></span><button id="res-next" class="primary">Continue</button></div>
   </div>
 </div>
 
 <div id="pause" class="screen" hidden>
   <div class="panel">
-    <h2>Paused (the race is not)</h2>
+    <h2 id="p-title">Paused</h2>
     <div class="btns col">
-      <button id="p-resume" class="primary">Back to the race</button>
+      <button id="p-resume" class="primary">Resume</button>
       <button id="p-sound">Sound: on</button>
-      <button id="p-ghost">Ghost of your best lap: on</button>
-      <button id="p-leave" class="ghost">Leave race</button>
+      <button id="p-gfx">Graphics: auto</button>
+      <button id="p-ghost">Ghost of your best lap: off</button>
+      <button id="p-leave" class="ghost">Retire from session</button>
     </div>
   </div>
 </div>
 
 <div id="boss" hidden>
-  <div class="bossbar"><b>Q4_forecast_FINAL_v7_really_final</b><span>File</span><span>Edit</span><span>View</span><span>Insert</span><span>Data</span><span>Help</span><em>Autopilot is driving. Press B to return.</em></div>
-  <div class="bossfx"><i>fx</i><span>=SUM(B2:B14)*IF(synergy,1.07,1)</span></div>
+  <div class="bossbar"><b>Book1 - Sheet1</b><span>File</span><span>Edit</span><span>View</span><span>Insert</span><span>Data</span><span>Help</span><em>Autopilot is driving your car. Press B to return.</em></div>
+  <div class="bossfx"><i>fx</i><span>=SUM(B2:B14)</span></div>
   <div id="bossgrid"></div>
 </div>
 <!--JS-->

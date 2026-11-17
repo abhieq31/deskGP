@@ -9,10 +9,11 @@ const ctx0 = await b.newContext({ viewport: { width: 960, height: 540 } });
 const pages = [];
 for (let i = 0; i < N; i++) {
   const ctx = mode === "local" || i === 0 ? ctx0 : await b.newContext({ viewport: { width: 960, height: 540 } });
-  const p = await ctx.newPage(); pages.push(p);
+  const p = await ctx.newPage(); pages.push(p); p.setDefaultTimeout(180000);
   p.on("console", (m) => { if (m.type() === "error") console.log(`[p${i} error]`, m.text().slice(0, 200)); });
   p.on("pageerror", (e) => console.log(`[p${i} pageerror]`, e.message, (e.stack || "").split("\n")[1]));
   if (process.env.NORTC) await p.addInitScript(() => { delete window.RTCPeerConnection; });
+  await p.addInitScript(() => { try { localStorage.setItem("deskgp:prefs3", JSON.stringify({ gfx: 0, sound: false })); } catch {} });
 }
 const [host, ...guests] = pages;
 await host.goto(url); await host.fill("#name", "Host"); await host.click("#create"); await host.waitForTimeout(1500);
@@ -24,7 +25,7 @@ console.log("lobby full:", ok, "after", ((Date.now() - t0) / 1000).toFixed(1), "
 await host.waitForTimeout(4000);
 for (const [i, p] of pages.entries()) console.log(`p${i}`, await p.evaluate(() => { const n = window.__deskgp.S.room.net; return { relays: n.relaysUp, peers: [...n.peers.values()].map((x) => x.name + ":" + (x.rtc ? "direct" : "relay")), startVisible: !document.querySelector("#start").hidden, msg: document.querySelector("#lobbymsg").textContent }; }));
 await host.screenshot({ path: out + "/mp-lobby-host.png" });
-await host.click('#o-laps button[data-v="1"]'); await host.click('#o-bots button[data-v="1"]'); await host.waitForTimeout(600);
+await host.click('#o-laps button:nth-child(1)'); await host.click('#o-bots button:nth-child(2)'); await host.waitForTimeout(600);
 await host.click("#start"); await host.waitForTimeout(9500);
 for (const p of pages) await p.keyboard.press("KeyB"); // autopilot drives everyone
 await host.waitForTimeout(9000);

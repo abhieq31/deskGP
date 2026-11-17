@@ -102,7 +102,7 @@ export function createNet(code, me, handlers, opts = {}) {
     p.last = performance.now();
     return p;
   }
-  function hello(to, ask) { busOut({ hi: { name: me.name, color: me.color, joined: me.joined, ask: ask || undefined }, to: to || undefined }); }
+  function hello(to, ask) { busOut({ hi: { name: me.name, color: me.color, num: me.num, joined: me.joined, ask: ask || undefined }, to: to || undefined }); }
   const beat = setInterval(() => {
     if (N.closed) return;
     const now = performance.now(); let allRtc = N.peers.size > 0;

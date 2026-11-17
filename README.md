@@ -1,46 +1,59 @@
 # DeskGP
 
-Electric sedans on proper circuits, raced from your desk. Multiplayer by room code, bots when you are alone. One HTML file, no server.
+Grand Prix racing in the browser. Race friends with a room code, or a full AI grid when you are alone. One HTML file, no server.
 
 **Play: [abhieq31.com/deskgp](https://abhieq31.com/deskgp/)**
 
 ## What is in it
 
-- **Three circuits** with kerbs, gravel traps, barriers, grandstands and a pit building: Silverline Circuit (day), Harbour Lights (night, floodlit), Sunset Ridge (golden hour).
-- **Multiplayer for up to 8** by sharing a six-character code or a link. Bots fill the rest of the grid; the host picks circuit, laps, bot pace and teams.
-- **Solo** against bots at four pace levels, plus a ghost of your best lap and a live delta to it.
-- **Racing model**: grip rises with speed (downforce), braking and cornering share one friction budget, slipstream, DRS zones, kerbs, lift-off regeneration, grass and gravel that slow you down, solid barriers, and a boost that recharges under braking and in a tow.
-- **Race craft**: five-light start with reaction time and jump-start penalty, sector colours, fastest-lap point, reverse-championship grids, two-team scoring, emotes, timing tower, minimap (bottom right), four cameras.
-- **Boss key (B)**: a spreadsheet covers the screen, sound cuts, and the autopilot keeps your car in the race.
+- **Three circuits**: Silverline Circuit (day, permanent circuit with gravel traps and tyre walls), Harbour Lights Street Circuit (night, concrete walls lining the track, city towers, the harbour), Sunset Ridge (golden hour, painted run-off, hills).
+- **Two car classes**: Electric GT (instant torque, regen when you lift) and Formula (more downforce, a V6 note, eight gears, DRS flap).
+- **Sporting rules**, enforced by race control:
+  - five red lights, one a second, then a random hold; throttle before lights out is a jump start (+5 s)
+  - track limits: all four wheels over the white line deletes the lap; three warnings, a black-and-white flag, then +5 s penalties
+  - running into the back of another car: +5 s for causing a collision
+  - yellow flags in a sector after an incident: no DRS there, and overtaking under yellow is +5 s
+  - blue flags when a car a lap ahead is right behind you
+  - DRS enabled from lap 3, only if you are within one second of the car ahead at the detection point
+  - chequered flag: once the leader finishes, everyone finishes at their next crossing
+  - time penalties are added to the race time; points 25-18-15-12-10-8-6-4-2-1
+  - optional one-shot qualifying (out lap and two flying laps) sets the grid
+- **Damage**: dents where you hit, front wings, endplates, mirrors and spoilers break off and stay on the track, damage costs grip, top speed or pulls the steering, and a big enough accident retires the car. Off, visual-only or full.
+- **Assists** (per driver): racing line that turns yellow and red where you need to lift and brake, braking assist, steering assist.
+- **Multiplayer for up to 10 cars** by room code or link; AI drivers fill the grid.
+- **Quick-hide (B)**: a plain spreadsheet covers the screen and the autopilot keeps your car in the race.
 
 ## Controls
 
 | | |
 | :-- | :-- |
 | Drive | WASD or arrow keys (gamepad and touch also work) |
-| Boost | Space or Shift |
-| Reset to track | R |
-| Camera | C |
+| ERS boost | Space or Shift |
+| Camera | C (chase, far chase, onboard, TV) |
+| Recover when stopped or beached | R |
 | Mute | M |
-| Boss key | B |
 | Emotes | 1 to 4 |
-| Menu | Esc |
+| Pause / graphics | Esc |
+| Quick-hide | B |
 
 ## How multiplayer works
 
-There is no game server. Players with the same room code find each other on public Nostr relays (messages are encrypted with a key derived from the code), then open direct WebRTC data channels and race over those at 20 updates a second. Each player simulates their own car, so steering never waits for the network; other cars are drawn about 0.1 s in the past and interpolated. The host simulates the bots; if the host leaves, the next player takes over. If two players cannot connect directly (strict firewall), their updates fall back to the relays at a lower rate.
+There is no game server. Players with the same room code find each other on public Nostr relays (messages are encrypted with a key derived from the code), then open direct WebRTC data channels and race over those at 30 updates a second. Each player simulates their own car, so steering never waits for the network; other cars are drawn about 0.1 s in the past and interpolated. The host simulates the AI drivers; if the host leaves, the next player takes over. If two players cannot connect directly (strict firewall), their updates fall back to the relays at a lower rate. Each driver's own client judges its own incidents (track limits, contact from behind, yellow flags) and announces penalties to everyone.
 
 ## Develop
 
 ```
 npm install
 npm run build     # writes deskgp.html (single self-contained file)
-npm test          # headless: circuits are legal, bots finish clean races
+npm test          # headless: circuits are legal, AI drivers finish clean races in both classes
+node test/feel.mjs  # how fast the car responds to a key press
 ```
 
-`test/shot.mjs` and `test/mp.mjs` drive the built file in headless Chromium (solo race, and two or more browsers racing each other).
+`test/shot.mjs`, `test/still.mjs` and `test/mp.mjs` drive the built file in headless Chromium (solo race, high-quality stills, two or more browsers racing each other).
 
-Source is in `src/`: `track.js` (circuits, racing line), `physics.js` (car model), `ai.js` (bots), `world.js` (three.js scene), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (race rules, lobby, HUD).
+Source is in `src/`: `track.js` (circuits, racing line, speed profiles), `physics.js` (car model, damage), `ai.js` (AI drivers), `world.js` (three.js scene, cars, post-processing), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (sporting rules, lobby, HUD).
+
+Driver names on the AI grid are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams or drivers.
 
 ## Licence
 

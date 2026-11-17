@@ -1,8 +1,7 @@
 // All sound is synthesised: no audio files to download.
-import { gearOf, rpmOf } from "./physics.js";
 
 export function createAudio() {
-  const A = { muted: false, ready: false };
+  const A = { muted: false, ready: false, mode: "ev" };
   let ctx, master, eng, others = [], skid, wind, noiseBuf;
 
   function engineVoice(pan) {
@@ -13,11 +12,22 @@ export function createAudio() {
     o1.start(); o2.start();
     return { o1, o2, g, f, p };
   }
-  function setVoice(v, speed, thr, vol) { // electric drivetrain: a rising motor whine, louder under load
-    const t = ctx.currentTime, base = 140 + speed * 21;
-    v.o1.frequency.setTargetAtTime(base, t, 0.04); v.o2.frequency.setTargetAtTime(base * 2.01, t, 0.04);
-    v.f.frequency.setTargetAtTime(900 + speed * 40, t, 0.05);
-    v.g.gain.setTargetAtTime(vol * (0.25 + 0.75 * thr) * (0.5 + Math.min(1, speed / 60) * 0.5), t, 0.06);
+  // GT: electric motor whine rising with speed. Formula: turbo V6, pitch follows rpm through the gears.
+  function setVoice(v, speed, thr, vol, rpm) {
+    const t = ctx.currentTime;
+    if (A.mode === "v6") {
+      const f = 95 + (rpm ?? Math.min(1, speed / 92)) * 330;
+      v.o1.type = "sawtooth"; v.o2.type = "square";
+      v.o1.frequency.setTargetAtTime(f, t, 0.012); v.o2.frequency.setTargetAtTime(f * 0.5, t, 0.012);
+      v.f.frequency.setTargetAtTime(700 + (rpm ?? 0.5) * 3200 * (0.45 + 0.55 * thr), t, 0.03);
+      v.g.gain.setTargetAtTime(vol * 1.15 * (0.3 + 0.7 * thr), t, 0.03);
+    } else {
+      const base = 140 + speed * 21;
+      v.o1.type = "triangle"; v.o2.type = "sine";
+      v.o1.frequency.setTargetAtTime(base, t, 0.04); v.o2.frequency.setTargetAtTime(base * 2.01, t, 0.04);
+      v.f.frequency.setTargetAtTime(900 + speed * 40, t, 0.05);
+      v.g.gain.setTargetAtTime(vol * (0.25 + 0.75 * thr) * (0.5 + Math.min(1, speed / 60) * 0.5), t, 0.06);
+    }
   }
   function noiseLoop(type, freq, q) {
     const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
@@ -43,7 +53,7 @@ export function createAudio() {
     if (!A.ready) return;
     const t = ctx.currentTime;
     if (me) {
-      setVoice(eng, me.speed, me.thr, 0.09);
+      setVoice(eng, me.speed, me.thr, 0.09, me.rpm);
       skid.g.gain.setTargetAtTime(Math.min(0.16, Math.max(0, me.slip - 0.25) * 0.2), t, 0.04);
       wind.g.gain.setTargetAtTime(Math.min(0.3, me.speed / 95 * 0.26), t, 0.1); wind.f.frequency.setTargetAtTime(300 + me.speed * 14, t, 0.1);
     } else { eng.g.gain.setTargetAtTime(0, t, 0.1); skid.g.gain.setTargetAtTime(0, t, 0.1); wind.g.gain.setTargetAtTime(0, t, 0.1); }
@@ -82,6 +92,11 @@ export function createAudio() {
     fall: () => tone(700, 0.9, "sine", 0.14, 0, 0.15),
     emote: () => tone(990, 0.07, "sine", 0.1),
     splash: () => burst(0.35, 1400, 0.2, 0.4),
+    crash: (a = 1) => { burst(0.5, 260, 0.7 * a, 0.3); burst(0.25, 2600, 0.35 * a, 0.5); tone(70, 0.3, "sine", 0.45 * a, 0, 0.4); },
+    part: () => { burst(0.18, 3200, 0.3, 0.6); tone(1400, 0.12, "triangle", 0.08, 0.02, 0.5); },
+    rc: () => { tone(1046, 0.09, "square", 0.08); tone(1318, 0.12, "square", 0.08, 0.1); },
+    shift: () => burst(0.06, 1800, 0.18, 0.4),
+    drs: () => burst(0.12, 2400, 0.12, 1.8),
   };
   A.fx = function (name, a) { if (!A.ready || A.muted) return; try { FX[name]?.(a); } catch {} };
   return A;

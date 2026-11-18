@@ -13,7 +13,8 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 - **Two rule sets**: *Casual* (start lights, DRS, chequered flag, points; nothing to obey) and *Grand Prix* (qualifying, track limits, penalties, yellow and blue flags, DRS from lap 3, full damage), where race control explains each rule the first time it comes up.
 - **Challenge links**: share your best lap as a link; whoever opens it races your ghost with a live gap. No accounts.
 - **Multiplayer for up to 10 cars** by room code or link; AI drivers (named after famous drivers) fill the grid. The race pauses for everyone if the host steps away.
-- **Liveries** with (fictional) tech sponsors, dents and parts that break off.
+- **Ten sponsor teams** (NVIDIA, Reliance Jio, Google, Tata, Mahindra, Tesla, Amazon, Apple, Meta, SpaceX, with Shopify and other Reliance brands as secondary sponsors), two cars each. Detailed cars: suspension, multi-element wings, brake discs and callipers, dents and parts that break off.
+- **Lineup and podium**: drivers posed in front of their cars before the lights, and a podium with a stats board (grid, gap, best lap, top speed, overtakes, points, rating) before the classification.
 
 ## Controls
 
@@ -45,7 +46,7 @@ node test/feel.mjs  # how fast the car responds to a key press
 
 Source is in `src/`: `track.js` (circuits, racing line, speed profiles, barriers), `layout.js` (where scenery may go), `physics.js` (car model, damage), `ai.js` (AI drivers), `world.js` (three.js scene, cars, post-processing), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (sporting rules, lobby, HUD).
 
-Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Sponsor names on cars and boards are invented.
+Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Team and sponsor names are set in plain lettering for fun; DeskGP has no affiliation with, and is not endorsed by, any of those companies.
 
 ## Licence
 

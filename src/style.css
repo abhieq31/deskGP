@@ -189,3 +189,27 @@ kbd{font-family:var(--mono);font-size:12px;background:#1d2230;border:1px solid #
 @media(max-width:720px){.yr{grid-template-columns:1fr}}
 #chal{background:rgba(255,214,10,.1);border:1px solid rgba(255,214,10,.45);border-radius:12px;padding:12px;margin:0 0 14px;display:flex;flex-direction:column;gap:10px;font-weight:650;font-size:14px}
 .rbtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+#colors .team{width:auto;height:auto;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:900;font-style:italic;letter-spacing:.02em;border:2px solid;transform:none}
+#colors .team.on{outline:2px solid #fff;outline-offset:1px}
+#colors{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+
+/* lineup: before the race and the podium */
+#lineup{position:fixed;inset:0;pointer-events:none;z-index:5}
+#lineup .lu-top{position:absolute;top:22px;left:28px;display:flex;flex-direction:column;gap:3px}
+#lu-title{font-size:clamp(26px,3.4vw,44px);font-weight:900;font-style:italic;letter-spacing:-.01em;text-shadow:0 4px 24px rgba(0,0,0,.6)}
+#lu-sub{color:#cfd4dc;font-weight:800;letter-spacing:.14em;font-size:12px}
+.lu-tag{position:absolute;transform:translate(-50%,-110%);text-align:center;white-space:nowrap;display:flex;flex-direction:column;align-items:center;gap:2px}
+.lu-tag b{font-size:13px;font-weight:900;font-style:italic;background:var(--c);color:var(--i);padding:1px 8px;border-radius:4px;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.lu-tag span{font-weight:800;font-size:15px;text-shadow:0 2px 8px rgba(0,0,0,.8)}
+.lu-tag em{font-style:normal;font-size:10.5px;letter-spacing:.14em;color:#cfd4dc;font-weight:800}
+#lu-board{position:absolute;left:50%;bottom:74px;transform:translateX(-50%);width:min(980px,94vw);background:rgba(6,8,12,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:6px 10px;font-size:13px}
+.lb-row{display:grid;grid-template-columns:2.2fr .6fr 1fr 1.1fr 1.1fr .9fr .9fr .6fr .7fr;gap:8px;align-items:center;padding:7px 6px;border-top:1px solid rgba(255,255,255,.06);font-variant-numeric:tabular-nums}
+.lb-row span:first-child{display:flex;align-items:center;gap:8px;font-weight:800}
+.lb-row i{width:4px;height:16px;border-radius:2px}
+.lb-row.lb-h{border-top:0;font-size:10.5px;letter-spacing:.12em;color:var(--dim);font-weight:800}
+.lb-row.me{background:rgba(255,214,10,.12);border-radius:8px}
+.lb-row em{font-style:normal;font-weight:800;font-size:11px}.lb-row em.g{color:var(--green)}.lb-row em.r{color:#ff7373}
+.lb-row .p{color:var(--purple);font-weight:800}.lb-row .rt{font-weight:900;color:var(--yellow);font-size:15px}
+#lineup .lu-foot{position:absolute;right:28px;bottom:22px;display:flex;align-items:center;gap:14px;pointer-events:auto}
+#lu-count{font-weight:800;color:#cfd4dc;letter-spacing:.04em}
+@media(max-width:760px){.lb-row{grid-template-columns:2fr .7fr 1fr 1fr .7fr;font-size:11px}.lb-row span:nth-child(4),.lb-row span:nth-child(6),.lb-row span:nth-child(7),.lb-row span:nth-child(8){display:none}}

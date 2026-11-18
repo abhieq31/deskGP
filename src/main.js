@@ -2,7 +2,8 @@
 import { TRACKS, buildTrack, outlineOf, gridPose, wrap, speedProfile } from "./track.js";
 import { makeCar, placeCar, stepCar, collideCars, updateTow, respawn, clamp, CLASSES } from "./physics.js";
 import { makeBrain, drive, DRIVERS, DIFFS, codeOf } from "./ai.js";
-import { createWorld, SPONSORS } from "./world.js";
+import { createWorld } from "./world.js";
+import { TEAMS, teamOf, uiColor } from "./teams.js";
 import { createAudio } from "./audio.js";
 import { createNet, newRoomCode, parseRoomCode, formatRoomCode, newId } from "./net.js";
 import { encodeChallenge, decodeChallenge } from "./challenge.js";
@@ -25,9 +26,9 @@ const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("deskgp:" + k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("deskgp:" + k, JSON.stringify(v)); } catch {} },
 };
-const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto" }, store.get("prefs3", {}));
+const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "nvidia", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto" }, store.get("prefs3", {}));
 const savePrefs = () => store.set("prefs3", prefs);
-const me = { id: newId(), name: prefs.name || "", color: prefs.color, num: prefs.num || 0, joined: Date.now() };
+const me = { id: newId(), name: prefs.name || "", team: prefs.team, color: teamOf(prefs.team).body, num: prefs.num || 0, joined: Date.now() };
 
 // circuits are built when first raced (a 7 km circuit takes a moment); menus use cheap outlines
 const built = [];
@@ -35,7 +36,7 @@ const track = (i) => built[i] || (built[i] = buildTrack(TRACKS[i]));
 const world = createWorld($("#gl"));
 if (prefs.gfx !== "auto") world.setQuality(prefs.gfx);
 const audio = createAudio(); audio.muted = !prefs.sound;
-window.__deskgp = { world, track, get S() { return S; }, set auto(v) { S.auto = !!v; } }; // auto: test hook, the AI drives your car
+window.__deskgp = { world, track, get S() { return S; }, set auto(v) { S.auto = !!v; }, podium: (r) => showPodium(r) }; // auto: test hook, the AI drives your car
 
 const S = { screen: "menu", room: null, race: null, boss: false, paused: false, clockOff: 0, clockRtt: 1e9, joinedAt: 0 };
 const netNow = () => performance.now() + S.clockOff;
@@ -145,17 +146,17 @@ world.onQuality = () => console.info("DeskGP: graphics lowered to keep the frame
 function rankOf(xp) { let r = RANKS[0]; for (const x of RANKS) if (xp >= x[0]) r = x; return r[1]; }
 function renderMenu() {
   $("#name").value = prefs.name; $("#num").value = prefs.num || "";
-  $("#colors").innerHTML = COLORS.map((c) => `<button style="background:${c}" data-c="${c}" class="${c === prefs.color ? "on" : ""}" aria-label="Livery ${c}"></button>`).join("");
+  $("#colors").innerHTML = TEAMS.map((t) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="background:${t.body};color:${t.ink};border-color:${t.id === prefs.team ? "#fff" : t.accent}" aria-label="${t.name}">${esc(t.short || t.name)}</button>`).join("");
   $("#career").textContent = prefs.races ? `${rankOf(prefs.xp)} · ${prefs.xp} points · ${prefs.wins} win${prefs.wins === 1 ? "" : "s"} from ${prefs.races} starts` : "";
   const hc = parseRoomCode(location.hash); if (hc) $("#code").value = formatRoomCode(hc);
   const ch = S.challenge, box = $("#chal"), ti = ch ? TRACKS.findIndex((d) => d.id === ch.track) : -1;
   box.hidden = !(ch && ti >= 0);
   if (ch && ti >= 0) box.querySelector("span").textContent = `${ch.name} challenges you: ${fmt(ch.t)} at ${TRACKS[ti].name} (${CLASSES[ch.cls]?.name || "car"}). Beat that lap.`;
 }
-$("#colors").onclick = (e) => { const c = e.target.dataset.c; if (!c) return; prefs.color = me.color = c; savePrefs(); renderMenu(); audio.fx("click"); };
+$("#colors").onclick = (e) => { const t = e.target.closest("[data-t]")?.dataset.t; if (!t) return; prefs.team = me.team = t; me.color = teamOf(t).body; savePrefs(); renderMenu(); audio.fx("click"); };
 $("#name").oninput = (e) => { prefs.name = e.target.value.trim().slice(0, 18); savePrefs(); };
 $("#num").oninput = (e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); prefs.num = n >= 1 && n <= 99 ? n : 0; savePrefs(); };
-function commitName() { me.name = prefs.name || `Driver ${me.id.slice(0, 3).toUpperCase()}`; me.color = prefs.color; me.num = prefs.num || 2 + Math.floor(Math.random() * 97); }
+function commitName() { me.name = prefs.name || `Driver ${me.id.slice(0, 3).toUpperCase()}`; me.team = prefs.team; me.color = uiColor(teamOf(prefs.team)); me.num = prefs.num || 2 + Math.floor(Math.random() * 97); }
 $("#solo").onclick = () => { audio.init(); commitName(); enterRoom(null); };
 $("#chal-go").onclick = () => {
   const ch = S.challenge, ti = TRACKS.findIndex((d) => d.id === ch?.track); if (ti < 0) return;
@@ -186,13 +187,13 @@ function enterRoom(code, creator) {
 }
 function leaveNet() { if (S.room?.net) S.room.net.close(); }
 function leaveRoom() {
-  leaveNet(); S.room = null; endRace();
+  leaveNet(); S.room = null; closeLineup(); endRace();
   try { history.replaceState(null, "", location.pathname + location.search); } catch {}
   show("menu"); startDemo();
 }
 function members() {
-  const R = S.room, list = [{ id: me.id, name: me.name, color: me.color, num: me.num, joined: me.joined, me: true, rtc: true }];
-  if (R?.net) for (const p of R.net.peers.values()) list.push({ id: p.id, name: p.name || "Driver", color: p.color || "#fff", num: p.num || 0, joined: p.joined || 9e15, rtc: p.rtc });
+  const R = S.room, list = [{ id: me.id, name: me.name, team: me.team, color: me.color, num: me.num, joined: me.joined, me: true, rtc: true }];
+  if (R?.net) for (const p of R.net.peers.values()) list.push({ id: p.id, name: p.name || "Driver", team: p.team || "nvidia", color: uiColor(teamOf(p.team)), num: p.num || 0, joined: p.joined || 9e15, rtc: p.rtc });
   return list.sort((a, b) => a.joined - b.joined || (a.id < b.id ? -1 : 1));
 }
 function hostId() { return members()[0].id; }
@@ -258,16 +259,18 @@ $("#copy").onclick = async () => { const url = location.origin + location.pathna
 $("#leave").onclick = leaveRoom;
 
 function buildGrid(order) {
-  const R = S.room, mem = members(), nb = Math.max(0, Math.min(R.cfg.bots, MAXCARS - mem.length)), used = new Set(mem.map((m) => m.color));
-  let grid = mem.slice(0, MAXCARS).map((m) => ({ id: m.id, name: m.name, color: m.color, num: m.num, kind: "h" }));
-  for (let i = 0; i < nb; i++) { const d = DRIVERS[i]; grid.push({ id: "bot" + i, name: d[0], color: used.has(d[2]) ? COLORS[(i + 3) % COLORS.length] : d[2], num: NUMS[d[1]] || i + 2, kind: "b", skill: DIFFS[R.cfg.diff].skill * (1 - 0.006 * ((i * 7) % 5)), seed: Math.random() }); }
+  const R = S.room, mem = members(), nb = Math.max(0, Math.min(R.cfg.bots, MAXCARS - mem.length));
+  let grid = mem.slice(0, MAXCARS).map((m) => ({ id: m.id, name: m.name, team: m.team, color: uiColor(teamOf(m.team)), num: m.num, kind: "h" }));
+  // AI drivers fill the teams two cars at a time, like a real grid
+  const seats = []; for (const t of TEAMS) { const taken = grid.filter((g) => g.team === t.id).length; for (let k = taken; k < 2; k++) seats.push(t.id); }
+  for (let i = 0; i < nb; i++) { const d = DRIVERS[i], t = teamOf(seats[i % seats.length]); grid.push({ id: "bot" + i, name: d[0], team: t.id, color: uiColor(t), num: NUMS[d[1]] || i + 2, kind: "b", skill: DIFFS[R.cfg.diff].skill * (1 - 0.006 * ((i * 7) % 5)), seed: Math.random() }); }
   if (order) grid.sort((a, b) => (order.indexOf(a.id) + 1 || 99) - (order.indexOf(b.id) + 1 || 99));
   else grid = grid.map((g) => [Math.random(), g]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   return grid;
 }
 function startSession(mode, order) {
   const R = S.room; if (!isHost()) return;
-  R.go = { t: "go", mode, at: Math.round(netNow() + 1500), hold: Math.round(400 + Math.random() * 2200), cfg: { ...R.cfg }, grid: buildGrid(order), n: mode === "race" ? ++R.raceN : R.raceN + 0.5 };
+  R.go = { t: "go", mode, at: Math.round(netNow() + (mode === "race" ? 6500 : 1500)), hold: Math.round(400 + Math.random() * 2200), cfg: { ...R.cfg }, grid: buildGrid(order), n: mode === "race" ? ++R.raceN : R.raceN + 0.5 };
   R.phase = "race"; R.net?.send(R.go, { reliable: true }); sendLob();
   startRace(R.go);
 }
@@ -298,12 +301,12 @@ function onMsg(from, m) {
 }
 
 // ---------- race ----------
-function endRace() { S.race = null; world.clearCars(); world.setRacingLine(null); }
+function endRace() { S.race = null; world.clearCars(); world.setRacingLine(null); $("#interval").hidden = true; $("#rc").hidden = true; }
 function startDemo(force) {
   if (S.race && !S.race.demo) return;
   const ti = S.room ? S.room.cfg.track : Math.floor(Math.random() * TRACKS.length), cls = S.room ? S.room.cfg.cls : "gt";
   if (!force && S.race?.demo && S.race.T === built[ti] && S.race.cls.id === cls) return;
-  const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], color: d[2], num: NUMS[d[1]], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
+  const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], team: TEAMS[i % TEAMS.length].id, color: TEAMS[i % TEAMS.length].body, num: NUMS[d[1]], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
   startRace({ mode: "race", at: netNow() - 9000, hold: 0, cfg: { track: ti, laps: 9999, cls, dmg: 1 }, grid, n: -1 }, true);
 }
 function owns(e) { return e.id === me.id || (e.kind === "b" && (S.race.demo || isHost())); }
@@ -312,7 +315,7 @@ function startRace(go, demo) {
   endRace();
   const T = track(go.cfg.track), cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
   T.v = speedProfile(T, cls);
-  if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; }
+  if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; } else world.resetRace();
   audio.mode = cls.id === "f1" ? "v6" : "ev";
   const race = S.race = { go, demo: !!demo, T, cls, quali, laps: quali ? QUALI_LAPS : go.cfg.laps, dmg: go.cfg.rules === "gp" ? 2 : 1, gp: go.cfg.rules === "gp" && !demo, t0: go.at + 5000 + go.hold, cars: [], byId: new Map(), mine: null, state: "pre", order: [], firstFin: null, lightsN: -1, sendT: 0, hudT: 0, monT: 0, bestLap: null, bestBy: null, spect: false, yellowT: [-99, -99, -99], drsOn: !(go.cfg.rules === "gp") || quali, rcQ: [], outHits: [], held: false, heldAt: 0 };
   if (quali) race.t0 = go.at + 3500;
@@ -320,10 +323,11 @@ function startRace(go, demo) {
     const c = makeCar(g.id, cls), pose = quali ? gridPose(T, i * 3) : gridPose(T, i); placeCar(c, pose); c.total = pose.i - T.n; c.dents = [];
     const e = { ...g, code: codeOf(g.name), c, slot: i, br: null, snaps: [], lapStart: 0, lapTimes: [], valid: [], best: null, lapsDone: 0, fin: false, finT: null, pos: i + 1, px: c.x, pz: c.z, ph: c.h, lastSeen: performance.now(), delay: 110, gapAvg: 50, secT: 0, sec: 0, rec: [], prof: [], recT: 0, pen: 0, tlN: 0, inv: false, wasTl: false, rel: {}, drsArm: [], prevIdx: c.idx, ret: false, bt: new Map(), bk: null, grid: i + 1, ovt: 0, top: 0 };
     race.cars.push(e); race.byId.set(g.id, e);
-    world.addCar(g.id, g.color, cls.id, { number: g.num, sponsor: g.sponsor || SPONSORS[[...g.id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % SPONSORS.length], accent: g.accent });
+    world.addCar(g.id, teamOf(g.team).body, cls.id, { number: g.num, team: teamOf(g.team) });
     if (g.id === me.id) race.mine = e;
   });
   race.spect = !demo && !race.mine;
+  if (!demo && !quali && netNow() < go.at - 800) startIntro(race);
   if (!demo && race.mine && !prefs.seenControls) toggleHelp(true);
   if (race.mine) loadGhost(race);
   world.snapCamera();
@@ -488,7 +492,7 @@ function simStep(race, now) {
     if (!green) { c.steer += (clamp(inp.steer, -1, 1) - c.steer) * 0.2; c.thr = inp.thr; continue; }
     const wasDrs = c.drs;
     stepCar(c, inp, DT, T, { damage: race.demo ? 0 : dmg });
-    if (c.tl && c.speed > 12 && c.respawned <= 0 && c.total > 0) e.inv = true; // a cut lap simply doesn't count as a record
+    if (c.tl && c.speed > 12 && c.respawned <= 0 && c.total > 0 && (race.gp || e.kind === "h")) e.inv = true; // a cut lap simply doesn't count as a record
     if (race.gp && c.tl && !e.wasTl && c.speed > 12 && c.respawned <= 0 && raceT > 1) { // Grand Prix: track limits are policed
       e.wasTl = true; e.tlN++;
       if (race.quali) { if (e === race.mine) toast("TRACK LIMITS \u00b7 LAP TIME DELETED", "r"); }
@@ -520,7 +524,7 @@ function simStep(race, now) {
     if (e.bk == null) e.bk = bk;
     if (bk > e.bk && bk - e.bk < 40) { for (let b = e.bk + 1; b <= bk; b++) e.bt.set(b, raceT); e.bk = bk; if (e.bt.size > 600) e.bt.delete(e.bt.keys().next().value); }
     else if (bk > e.bk) e.bk = bk;
-    if (e === race.mine && e.c.speed > e.top) e.top = e.c.speed;
+    if (e.c.speed > e.top && e.c.speed < 120) e.top = e.c.speed;
   }
   // contact, and the stewards' view of it
   if (!race.quali) for (let i = 0; i < all.length; i++) {
@@ -638,9 +642,11 @@ function updateOrder(race) {
   const prev = race.mine?.pos;
   race.order = race.quali ? classify(race) : race.cars.filter((e) => !e.gone).sort((a, b) => (a.ret !== b.ret ? (a.ret ? 1 : -1) : a.fin && b.fin ? a.finT - b.finT : a.fin ? -1 : b.fin ? 1 : b.c.total - a.c.total));
   race.order.forEach((e, i) => { e.prevPos = e.pos; e.pos = i + 1; });
+  // overtakes: a gain on track, not one handed over by a car that retired
+  if (race.state === "run" && !race.quali && (netNow() - race.t0) > 3000) for (const e of race.order) if (e.prevPos && e.pos < e.prevPos && !e.fin && race.order.slice(e.pos, e.prevPos).every((o) => !o.ret && !o.hide && !o.fin)) e.ovt += e.prevPos - e.pos;
   const m = race.mine;
   if (m && prev && race.state === "run" && !race.quali && !m.fin && m.pos !== prev && (netNow() - race.t0) > 3000) {
-    if (m.pos < prev) { toast(`P${m.pos}`, "g"); audio.fx("pass"); if (race.order.slice(m.pos, prev).every((o) => !o.ret && !o.hide)) m.ovt += prev - m.pos; } else { toast(`P${m.pos}`, "r"); }
+    if (m.pos < prev) { toast(`P${m.pos}`, "g"); audio.fx("pass"); } else { toast(`P${m.pos}`, "r"); }
   }
 }
 
@@ -750,15 +756,16 @@ function hostFinish(race, raceT) {
     R.net?.send(res, { reliable: true }); sendLob(); showResults(res);
     return;
   }
-  const res = order.map((e, i) => { const pts = e.ret ? 0 : POINTS[i] || 0; R.points[e.id] = (R.points[e.id] || 0) + pts; return { id: e.id, name: e.name, code: e.code, color: e.color, kind: e.kind, time: e.fin ? e.finT + e.pen : null, laps: e.lapsDone, ret: e.ret, best: e.best, pen: e.pen, pts, total: R.points[e.id], fast: race.bestBy === e.id, num: e.num, grid: e.grid }; });
+  const res = order.map((e, i) => { const pts = e.ret ? 0 : POINTS[i] || 0; R.points[e.id] = (R.points[e.id] || 0) + pts; return { id: e.id, name: e.name, code: e.code, color: e.color, kind: e.kind, time: e.fin ? e.finT + e.pen : null, laps: e.lapsDone, ret: e.ret, best: e.best, pen: e.pen, pts, total: R.points[e.id], fast: race.bestBy === e.id, num: e.num, grid: e.grid, team: e.team, top: Math.round(e.top * 3.6), ovt: e.ovt, clean: e.valid.filter(Boolean).length }; });
   R.phase = "lobby";
   const msg = { t: "res", order: res, n: race.go.n, track: race.T.def.name, laps: race.laps };
   R.net?.send(msg, { reliable: true }); sendLob();
   showResults(msg);
 }
 let qTimer = null;
-function showResults(res) {
+function showResults(res, skipPodium) {
   const R = S.room; if (!R) return;
+  if (!res.quali && !skipPodium && !res.podiumShown) { res.podiumShown = true; return showPodium(res); }
   R.phase = "lobby";
   const myI = res.order.findIndex((o) => o.id === me.id), lead = res.order[0];
   clearTimeout(qTimer);
@@ -794,6 +801,45 @@ function showResults(res) {
   show("results");
   if (myI === 0) audio.fx("win");
 }
+// ---------- lineup: before the race, and the podium after ----------
+let luTimer = null, luTags = [];
+function lineupOverlay(title, sub, tags, board, foot, btn) {
+  const L = $("#lineup"); L.hidden = false; $("#hud").hidden = true;
+  $("#lu-title").textContent = title; $("#lu-sub").textContent = sub;
+  $("#lu-tags").innerHTML = tags.map((t) => `<div class="lu-tag" style="--c:${esc(t.color)};--i:${esc(t.ink || "#fff")}"><b>${esc(t.top)}</b><span>${esc(t.name)}</span><em>${esc(t.team)}</em></div>`).join("");
+  luTags = [...$("#lu-tags").children];
+  $("#lu-board").innerHTML = board || ""; $("#lu-board").hidden = !board;
+  $("#lu-count").textContent = foot || ""; const b = $("#lu-next"); b.hidden = !btn; if (btn) { b.textContent = btn.label; b.onclick = btn.go; }
+}
+function placeTags() { if ($("#lineup").hidden) return; world.lineupTags().forEach(([x, y], i) => { const el = luTags[i]; if (el) { el.style.left = (x * 100).toFixed(2) + "%"; el.style.top = (y * 100).toFixed(2) + "%"; } }); }
+function closeLineup() { clearInterval(luTimer); $("#lineup").hidden = true; world.hideLineup(); if (S.screen === "race") $("#hud").hidden = false; }
+function startIntro(race) {
+  const g = race.go.grid, mine = race.mine, pick = [];
+  for (const x of g) if (x.kind === "h" && pick.length < 4) pick.push(x);
+  for (const x of [g[0], g[1], g[(mine?.slot ?? 0) + 1], g[2], g[3]]) if (x && pick.length < 4 && !pick.includes(x)) pick.push(x);
+  pick.sort((a, b) => g.indexOf(a) - g.indexOf(b));
+  world.showLineup(pick.map((x) => ({ team: teamOf(x.team), number: x.num })), race.cls.id);
+  const tags = pick.map((x) => ({ top: `P${g.indexOf(x) + 1}`, name: x.name + (x.id === me.id ? " (you)" : ""), team: teamOf(x.team).name, color: uiColor(teamOf(x.team)), ink: teamOf(x.team).ink }));
+  const tick = () => { const left = Math.ceil((race.go.at - 800 - netNow()) / 1000); if (left <= 0 || S.race !== race) { closeLineup(); world.snapCamera(); return; } lineupOverlay(race.T.def.name.toUpperCase(), `${race.laps} LAPS \u00b7 ${race.cls.name.toUpperCase()} \u00b7 ${race.gp ? "GRAND PRIX RULES" : "CASUAL"}`, tags, "", `Lights out in ${left}`, null); };
+  tick(); clearInterval(luTimer); luTimer = setInterval(tick, 250);
+}
+const rating = (o, i) => Math.round(clamp(55 + ((o.grid || i + 1) - (i + 1)) * 4 + (o.ovt || 0) * 2 + (o.clean || 0) * 2 + (i === 0 ? 10 : 0) - (o.pen || 0) - (o.ret ? 30 : 0), 10, 99));
+function showPodium(res) {
+  const top = res.order.slice(0, 3), mine = res.order.find((o) => o.id === me.id), shown = [...top];
+  if (mine && !shown.includes(mine)) shown.push(mine);
+  // podium order on stage: P2, P1, P3 (then you)
+  const stage = shown.length >= 3 ? [shown[1], shown[0], shown[2], ...shown.slice(3)] : shown;
+  const steps = { 0: 0.62, 1: 0.42, 2: 0.26 };
+  world.showLineup(stage.map((o) => { const i = res.order.indexOf(o); return { team: teamOf(o.team), number: o.num, podium: steps[i] || 0, pose: i === 0 ? "trophy" : i < 3 ? "wave" : "hips" }; }), S.race?.cls.id || "gt");
+  const tags = stage.map((o) => { const i = res.order.indexOf(o); return { top: o.ret ? "DNF" : `P${i + 1}`, name: o.name + (o.id === me.id ? " (you)" : ""), team: teamOf(o.team).name, color: uiColor(teamOf(o.team)), ink: teamOf(o.team).ink }; });
+  const lead = res.order[0];
+  const board = `<div class="lb-row lb-h"><span>DRIVER</span><span>POS</span><span>GRID</span><span>TIME</span><span>BEST LAP</span><span>TOP</span><span>OVERTAKES</span><span>PTS</span><span>RATING</span></div>` + shown.map((o) => { const i = res.order.indexOf(o), gained = (o.grid || i + 1) - (i + 1); return `<div class="lb-row${o.id === me.id ? " me" : ""}"><span><i style="background:${esc(uiColor(teamOf(o.team)))}"></i>${esc(o.name)}</span><span>${o.ret ? "DNF" : "P" + (i + 1)}</span><span>${o.grid ? "P" + o.grid : "-"} ${gained > 0 ? `<em class="g">\u25b2${gained}</em>` : gained < 0 ? `<em class="r">\u25bc${-gained}</em>` : ""}</span><span>${o.ret ? "-" : i === 0 ? fmt(o.time) : o.laps < lead.laps ? `+${lead.laps - o.laps}L` : o.time != null ? "+" + (o.time - lead.time).toFixed(3) : "-"}</span><span class="${o.fast ? "p" : ""}">${o.best ? fmt(o.best) : "-"}</span><span>${o.top || "-"} km/h</span><span>${o.ovt ?? 0}</span><span>${o.pts || 0}</span><span class="rt">${rating(o, i)}</span></div>`; }).join("");
+  let left = 12;
+  const tick = () => { lineupOverlay("RACE RESULT", `${res.track.toUpperCase()} \u00b7 ${res.laps || ""} LAPS`, tags, board, `Classification in ${left}s`, { label: "Classification", go: () => { closeLineup(); showResults(res, true); } }); if (left-- <= 0) { closeLineup(); showResults(res, true); } };
+  $("#hud").hidden = true; for (const id of ["menu", "lobby", "results"]) $("#" + id).hidden = true;
+  tick(); clearInterval(luTimer); luTimer = setInterval(tick, 1000);
+  if (mine && res.order.indexOf(mine) === 0) audio.fx("win");
+}
 $("#res-next").onclick = () => {
   clearTimeout(qTimer);
   const R = S.room;
@@ -807,6 +853,7 @@ function frame(t) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.25, (t - last) / 1000); last = t;
   const race = S.race;
+  if (world.lineup) placeTags();
   if (!race) { world.updateCamera(null, 0, dt); world.render(dt); return; }
   const frozen = race.held && !race.demo;
   const now = frozen ? race.heldAt : netNow();

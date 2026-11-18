@@ -191,7 +191,7 @@ kbd{font-family:var(--mono);font-size:12px;background:#1d2230;border:1px solid #
 .rbtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 #colors .team{width:auto;height:auto;border-radius:8px;padding:7px 9px;font-size:11px;font-weight:900;font-style:italic;letter-spacing:.02em;border:2px solid;transform:none}
 #colors .team.on{outline:2px solid #fff;outline-offset:1px}
-#colors{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+#colors{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 
 /* lineup: before the race and the podium */
 #lineup{position:fixed;inset:0;pointer-events:none;z-index:5}

@@ -26,8 +26,9 @@ const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("deskgp:" + k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("deskgp:" + k, JSON.stringify(v)); } catch {} },
 };
-const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "nvidia", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto" }, store.get("prefs3", {}));
+const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "mclaren", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto" }, store.get("prefs3", {}));
 const savePrefs = () => store.set("prefs3", prefs);
+if (!TEAMS.some((t) => t.id === prefs.team)) prefs.team = "mclaren"; // teams from an older version
 const me = { id: newId(), name: prefs.name || "", team: prefs.team, color: teamOf(prefs.team).body, num: prefs.num || 0, joined: Date.now() };
 
 // circuits are built when first raced (a 7 km circuit takes a moment); menus use cheap outlines
@@ -193,7 +194,7 @@ function leaveRoom() {
 }
 function members() {
   const R = S.room, list = [{ id: me.id, name: me.name, team: me.team, color: me.color, num: me.num, joined: me.joined, me: true, rtc: true }];
-  if (R?.net) for (const p of R.net.peers.values()) list.push({ id: p.id, name: p.name || "Driver", team: p.team || "nvidia", color: uiColor(teamOf(p.team)), num: p.num || 0, joined: p.joined || 9e15, rtc: p.rtc });
+  if (R?.net) for (const p of R.net.peers.values()) list.push({ id: p.id, name: p.name || "Driver", team: p.team || "mclaren", color: uiColor(teamOf(p.team)), num: p.num || 0, joined: p.joined || 9e15, rtc: p.rtc });
   return list.sort((a, b) => a.joined - b.joined || (a.id < b.id ? -1 : 1));
 }
 function hostId() { return members()[0].id; }
@@ -229,7 +230,7 @@ function renderLobby() {
   $("#copy").hidden = R.solo;
   const nb = Math.min(R.cfg.bots, MAXCARS - mem.length);
   $("#players").innerHTML = mem.map((m) => `<div class="pl"><i style="background:${esc(m.color)}"></i>${esc(m.name)}${m.me ? " (you)" : ""}<span class="pts">${R.points[m.id] ? R.points[m.id] + " pts" : ""}</span><em>${m.id === hid ? "host" : m.rtc ? "direct" : "relay"}</em></div>`).join("")
-    + DRIVERS.slice(0, Math.max(0, nb)).map((d, i) => `<div class="pl bot"><i style="background:${d[2]}"></i>${esc(d[0])}<span class="pts">${R.points["bot" + i] ? R.points["bot" + i] + " pts" : ""}</span><em>AI</em></div>`).join("");
+    + botPool(mem).slice(0, Math.max(0, nb)).map(([[name], t], i) => `<div class="pl bot"><i style="background:${uiColor(t)}"></i>${esc(name)} <small style="opacity:.6">${esc(t.name)}</small><span class="pts">${R.points["bot" + i] ? R.points["bot" + i] + " pts" : ""}</span><em>AI</em></div>`).join("");
   const n = R.net;
   $("#netstat").textContent = R.solo ? "" : !n.relaysUp ? "Connecting to the matchmaking relays…" : mem.length === 1 ? "Waiting for drivers. Send them the code or the link." : `${mem.length} drivers connected`;
   const tk = $("#tracks");
@@ -258,12 +259,14 @@ function renderLobby() {
 $("#copy").onclick = async () => { const url = location.origin + location.pathname + "#" + S.room.code; try { await navigator.clipboard.writeText(url); $("#copy").textContent = "Link copied"; } catch { prompt("Copy this link", url); } setTimeout(() => ($("#copy").textContent = "Copy invite link"), 1600); };
 $("#leave").onclick = leaveRoom;
 
+// the real drivers still free once the humans have taken their seats: [[name, code, number], team]
+function botPool(mem) { const pool = []; for (const t of TEAMS) { const humans = mem.filter((m) => m.team === t.id).length; t.drivers.slice(humans).forEach((d) => pool.push([d, t])); } return pool; }
 function buildGrid(order) {
   const R = S.room, mem = members(), nb = Math.max(0, Math.min(R.cfg.bots, MAXCARS - mem.length));
   let grid = mem.slice(0, MAXCARS).map((m) => ({ id: m.id, name: m.name, team: m.team, color: uiColor(teamOf(m.team)), num: m.num, kind: "h" }));
-  // AI drivers fill the teams two cars at a time, like a real grid
-  const seats = []; for (const t of TEAMS) { const taken = grid.filter((g) => g.team === t.id).length; for (let k = taken; k < 2; k++) seats.push(t.id); }
-  for (let i = 0; i < nb; i++) { const d = DRIVERS[i], t = teamOf(seats[i % seats.length]); grid.push({ id: "bot" + i, name: d[0], team: t.id, color: uiColor(t), num: NUMS[d[1]] || i + 2, kind: "b", skill: DIFFS[R.cfg.diff].skill * (1 - 0.006 * ((i * 7) % 5)), seed: Math.random() }); }
+  // the AI drivers are the real grid, team by team; a human takes one of the two seats in the team they picked
+  const pool = botPool(mem);
+  for (let i = 0; i < nb && i < pool.length; i++) { const [[name, , num], t] = pool[i]; grid.push({ id: "bot" + i, name, team: t.id, color: uiColor(t), num, kind: "b", skill: DIFFS[R.cfg.diff].skill * (1 - 0.006 * ((i * 7) % 5)), seed: Math.random() }); }
   if (order) grid.sort((a, b) => (order.indexOf(a.id) + 1 || 99) - (order.indexOf(b.id) + 1 || 99));
   else grid = grid.map((g) => [Math.random(), g]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   return grid;
@@ -306,7 +309,7 @@ function startDemo(force) {
   if (S.race && !S.race.demo) return;
   const ti = S.room ? S.room.cfg.track : Math.floor(Math.random() * TRACKS.length), cls = S.room ? S.room.cfg.cls : "gt";
   if (!force && S.race?.demo && S.race.T === built[ti] && S.race.cls.id === cls) return;
-  const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], team: TEAMS[i % TEAMS.length].id, color: TEAMS[i % TEAMS.length].body, num: NUMS[d[1]], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
+  const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], team: d[4], color: uiColor(teamOf(d[4])), num: d[3], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
   startRace({ mode: "race", at: netNow() - 9000, hold: 0, cfg: { track: ti, laps: 9999, cls, dmg: 1 }, grid, n: -1 }, true);
 }
 function owns(e) { return e.id === me.id || (e.kind === "b" && (S.race.demo || isHost())); }

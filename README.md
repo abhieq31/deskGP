@@ -7,13 +7,13 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 ## What is in it
 
 - **Five real Grand Prix circuits** from their actual centrelines at full scale, each in its own setting: Monza (royal park), Silverstone (open airfield), Spa-Francorchamps (Ardennes forest and hills), Monaco (harbour, yachts, Riviera streets) and Interlagos (inside the São Paulo skyline).
-- **Car physics from first principles**: each axle's tyres make grip from their own slip angle and load; weight moves forward under braking and back under power; downforce adds grip with speed. Understeer, lift-off rotation and wide exits come from the physics, not a script. Real numbers: the Electric GT does 0-100 km/h in 2.1 s and corners at about 1.3 g; the Formula car pulls 4 g at 290 km/h and stops from 200 km/h in 60 m.
+- **Planted, realistic car feel**: the wheel asks for a yaw rate the tyres can hold at that speed, grip builds from slip, and downforce adds grip with speed. Real power, drag and braking: the Electric GT does 0-100 km/h in 2.3 s and stops from 200 km/h in 96 m; the Formula car pulls 4 g at 290 km/h and stops from 200 km/h in 62 m.
 - **Skill that shows**: brake in a straight line, turn in, feed the throttle as you unwind. Every lap shows the gap to your all-time best; cut laps do not count as records; sector times go purple, green or yellow. Skill points (places gained, overtakes, clean laps, starts, records) build your career.
 - **Race like the broadcasts**: five-light start, live timing tower with real gaps, an interval board after each sector, DRS on the straights, chequered flag, F1 points, and a classification screen with your race summary.
 - **Two rule sets**: *Casual* (start lights, DRS, chequered flag, points; nothing to obey) and *Grand Prix* (qualifying, track limits, penalties, yellow and blue flags, DRS from lap 3, full damage), where race control explains each rule the first time it comes up.
 - **Challenge links**: share your best lap as a link; whoever opens it races your ghost with a live gap. No accounts.
 - **Multiplayer for up to 10 cars** by room code or link; AI drivers (named after famous drivers) fill the grid. The race pauses for everyone if the host steps away.
-- **Ten sponsor teams** (NVIDIA, Reliance Jio, Google, Tata, Mahindra, Tesla, Amazon, Apple, Meta, SpaceX, with Shopify and other Reliance brands as secondary sponsors), two cars each. Detailed cars: suspension, multi-element wings, brake discs and callipers, dents and parts that break off.
+- **The 2026 grid**: all eleven teams (McLaren, Mercedes, Red Bull Racing, Ferrari, Williams, Racing Bulls, Aston Martin, Haas, Audi, Alpine, Cadillac) with their real drivers and numbers; pick a team and take one of its two seats. Detailed cars: suspension, multi-element wings, brake discs and callipers, dents and parts that break off.
 - **Lineup and podium**: drivers posed in front of their cars before the lights, and a podium with a stats board (grid, gap, best lap, top speed, overtakes, points, rating) before the classification.
 
 ## Controls
@@ -46,7 +46,7 @@ node test/feel.mjs  # how fast the car responds to a key press
 
 Source is in `src/`: `track.js` (circuits, racing line, speed profiles, barriers), `layout.js` (where scenery may go), `physics.js` (car model, damage), `ai.js` (AI drivers), `world.js` (three.js scene, cars, post-processing), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (sporting rules, lobby, HUD).
 
-Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Team and sponsor names are set in plain lettering for fun; DeskGP has no affiliation with, and is not endorsed by, any of those companies.
+Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Team, driver and sponsor names are set in plain lettering as a tribute (no logos); DeskGP has no affiliation with, and is not endorsed by, Formula 1, any team or any sponsor.
 
 ## Licence
 

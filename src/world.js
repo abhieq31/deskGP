@@ -687,7 +687,7 @@ export function createWorld(canvas) {
   // ---------- drivers: racing suit, gloves, boots, helmet with visor ----------
   function buildDriver(team, pose = "stand") {
     const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
-    const suit = new THREE.MeshPhysicalMaterial({ color: team.body, roughness: 0.55, sheen: 0.6, sheenColor: new THREE.Color(team.accent), envMapIntensity: 0.6 });
+    const suit = new THREE.MeshPhysicalMaterial({ color: team.body, roughness: 0.55, sheen: 0.35, sheenColor: new THREE.Color(team.body), envMapIntensity: 0.6 });
     const acc = std({ color: team.accent, roughness: 0.5 }), blk = std({ color: 0x15161a, roughness: 0.7 }), helm = new THREE.MeshPhysicalMaterial({ color: team.accent, roughness: 0.15, metalness: 0.3, clearcoat: 1, envMapIntensity: 1.2 });
     const mesh = (geo, mat, x, y, z, parent = body) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
     const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 6, 12);
@@ -921,10 +921,10 @@ export function createWorld(canvas) {
     } else {
       const sp = c.speed || 0, y = c.y || 0, f1 = c.cls?.id === "f1";
       const vh = sp > 8 ? Math.atan2(c.vz, c.vx) : c.h;
-      const target = c.h + clamp(angd(vh, c.h), -0.6, 0.6) * 0.6;
+      const target = c.h + clamp(angd(vh, c.h), -0.3, 0.3) * 0.2; // follow the nose, a hint of the slide
       if (!cam.init) { cam.h = target; cam.d = 7; cam.look = 0; }
       cam.h += angd(target, cam.h) * (1 - Math.exp(-dt * (mode === 2 ? 30 : 6)));
-      cam.look += ((c.steer || 0) * 0.16 - cam.look) * (1 - Math.exp(-dt * 4));
+      cam.look += ((c.steer || 0) * 0.08 - cam.look) * (1 - Math.exp(-dt * 4));
       const wantD = (f1 ? 6.4 : 6.8) + sp * 0.028 + (c.boosting ? 1.0 : 0); cam.d += (wantD - cam.d) * (1 - Math.exp(-dt * 3));
       const fx = Math.cos(cam.h), fz = Math.sin(cam.h), lx = Math.cos(cam.h + cam.look), lz = Math.sin(cam.h + cam.look), hx = Math.cos(c.h), hz = Math.sin(c.h);
       const sf = Math.min(1, sp / 90);

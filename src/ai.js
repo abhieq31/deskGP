@@ -1,15 +1,9 @@
 // Bot driver. Also used as the autopilot while a human uses the quick-hide key.
 import { wrap } from "./track.js";
-import { steerLimit } from "./physics.js";
 
-// Grid names (name, three-letter code, livery colour).
-export const DRIVERS = [
-  ["Max Verstappen", "VER", "#1e3a8a"], ["Lewis Hamilton", "HAM", "#dc0000"], ["Charles Leclerc", "LEC", "#e10600"],
-  ["Lando Norris", "NOR", "#ff8000"], ["Oscar Piastri", "PIA", "#ff9a2e"], ["George Russell", "RUS", "#27f4d2"],
-  ["Fernando Alonso", "ALO", "#006f62"], ["Carlos Sainz", "SAI", "#2a63d4"], ["Kimi Antonelli", "ANT", "#9ef0e2"],
-  ["Pierre Gasly", "GAS", "#ff87bc"], ["Alex Albon", "ALB", "#64c4ff"], ["Yuki Tsunoda", "TSU", "#6692ff"],
-  ["Ayrton Senna", "SEN", "#f7f7f2"], ["Michael Schumacher", "MSC", "#ffd60a"],
-];
+import { GRID_DRIVERS, teamOf } from "./teams.js";
+// The real 2026 grid: [name, code, colour, number, team]
+export const DRIVERS = GRID_DRIVERS.map(([n, c, num, t]) => [n, c, teamOf(t).body, num, t]);
 export const BOT_NAMES = DRIVERS.map((d) => d[0]);
 export const DIFFS = [
   { id: "rookie", name: "Rookie", skill: 0.84 }, { id: "pro", name: "Pro", skill: 0.9 },
@@ -59,16 +53,12 @@ export function drive(c, br, T, cars, dt, raceT, ctx = {}) {
   br.off += (br.offTarget - br.off) * Math.min(1, 2.5 * dt);
 
   // aim at a point ahead on the racing line (pure pursuit), smoothed like a driver's hands
-  const heavy = c.cls.id === "gt", look = (heavy ? 9 : 6) + v * (heavy ? 0.5 : 0.34), li = wrap(c.idx + Math.round(look / T.step), n);
+  const look = 6 + v * 0.34, li = wrap(c.idx + Math.round(look / T.step), n);
   const keep = Math.max(-T.half + 1.5, Math.min(T.half - 1.5, T.lo[li] + br.off));
   const tx = T.x[li] + T.nx[li] * keep, tz = T.z[li] + T.nz[li] * keep;
-  const err = angDiff(Math.atan2(tz - c.z, tx - c.x), c.h), dist = Math.hypot(tx - c.x, tz - c.z);
-  // pure pursuit: the arc through the aim point, turned into a road-wheel angle with the car's own geometry,
-  // plus yaw-rate feedback so the car settles instead of weaving
-  const kappa = 2 * Math.sin(err) / Math.max(dist, 4), cls = c.cls;
-  let delta = Math.atan(cls.L * kappa) + 0.6 * cls.peak * Math.tanh(kappa * v * v / 12) - (heavy ? 0.09 : 0.045) * (c.w - kappa * v);
-  const raw = Math.max(-1, Math.min(1, delta / steerLimit(cls, v)));
-  br.st += (raw - br.st) * (1 - Math.exp(-dt * 30));
+  const err = angDiff(Math.atan2(tz - c.z, tx - c.x), c.h);
+  const raw = Math.max(-1, Math.min(1, err * (2.8 + 40 / (v + 12)) + c.w * 0.08));
+  br.st += (raw - br.st) * (1 - Math.exp(-dt * 26));
   out.steer = br.st;
 
   // speed: obey the profile a little way ahead

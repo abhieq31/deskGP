@@ -5,9 +5,9 @@ const out = process.argv[2] || ".", tr = +(process.argv[3] || 0), cls = process.
 const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 const p = await b.newPage({ viewport: { width: 1366, height: 768 } }); p.setDefaultTimeout(240000);
 p.on("pageerror", (e) => console.log("[pageerror]", e.message, (e.stack || "").split("\n")[1]));
-await p.addInitScript(([t, c]) => { localStorage.setItem("deskgp:prefs3", JSON.stringify({ name: "Abhi", num: 44, team: "jio", gfx: +(window.__GFX ?? 1), sound: false, seenControls: true })); localStorage.setItem("deskgp:cfg5", JSON.stringify({ track: t, laps: 3, bots: 7, diff: 1, cls: c, rules: "casual" })); }, [tr, cls]);
+await p.addInitScript(([t, c]) => { localStorage.setItem("deskgp:prefs3", JSON.stringify({ name: "Abhi", num: 44, team: "ferrari", gfx: +(window.__GFX ?? 1), sound: false, seenControls: true })); localStorage.setItem("deskgp:cfg5", JSON.stringify({ track: t, laps: 3, bots: 7, diff: 1, cls: c, rules: "casual" })); }, [tr, cls]);
 await p.goto("file://" + path.resolve("deskgp.html")); await p.waitForTimeout(1500);
-await p.click("#solo"); await p.waitForTimeout(800); await p.click("#start");
+await p.screenshot({ path: `${out}/0-menu.png` }); await p.click("#solo"); await p.waitForTimeout(800); await p.click("#start");
 await p.waitForTimeout(2500); await p.screenshot({ path: `${out}/1-intro.png` });
 await p.evaluate(() => (window.__deskgp.auto = true));
 await p.waitForTimeout(+(process.env.WAIT || 20000)); await p.screenshot({ path: `${out}/2-race.png` });

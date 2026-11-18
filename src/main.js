@@ -19,7 +19,7 @@ const CAMS = ["Chase cam", "Far chase", "Onboard", "TV cam"];
 const DT = 1 / 120, MAXCARS = 10, QUALI_LAPS = 3;
 const fmt = (t) => { if (t == null || !isFinite(t)) return "-:--.---"; const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(3).padStart(6, "0")}`; };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const angd = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+const angd = (a, b) => { let d = a - b; if (!Number.isFinite(d)) return 0; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; return d; }; // no loop: a bad value can never hang the page
 
 // ---------- persistent bits ----------
 const store = {
@@ -948,15 +948,29 @@ $("#res-next").onclick = () => {
 
 // ---------- main loop ----------
 let last = performance.now(), acc = 0;
-function frame(t) { requestAnimationFrame(frame); tick(t, true); }
+function frame() { requestAnimationFrame(frame); tick(performance.now(), true); } // one clock for frames and the background ticker
 // a hidden tab gets no animation frames and throttled timers, but a worker's messages still arrive: the race (host's AI
 // cars, network, timing) keeps running without drawing, so other players never see the host's cars freeze
 try {
   const wk = new Worker(URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 33)"], { type: "text/javascript" })));
   wk.onmessage = () => { if (document.hidden && S.race && !S.race.demo) { tick(performance.now(), false); hostHold(); } };
 } catch {}
+function netSend(race, now, dt) {
+  // network: my cars at 30 Hz direct (20 Hz when relayed), dents as they happen
+  race.sendT -= dt;
+  const net = S.room?.net;
+  if (net && net.peers.size && !race.held) {
+    if (race.outHits.length) { net.send({ t: "hit", h: race.outHits.splice(0) }, { reliable: true }); }
+    if (race.sendT <= 0) {
+      race.sendT = net.direct() === net.peers.size ? 1 / 30 : 0.05; const arr = [];
+      const q = (v) => Math.round(clamp(v, 0, 1) * 15);
+      for (const e of race.cars) if (owns(e) && !e.hide) { const c = e.c, D = c.dmg; arr.push([e.id, +c.x.toFixed(2), +c.z.toFixed(2), +c.h.toFixed(3), +c.vx.toFixed(1), +c.vz.toFixed(1), +c.w.toFixed(2), +c.steer.toFixed(2), (c.boosting ? 1 : 0) | (c.brk > 0.1 ? 2 : 0) | (c.drs ? 4 : 0) | (c.retired ? 8 : 0) | (c.thr > 0.2 ? 16 : 0) | (c.slip > 0.4 ? 32 : 0) | (c.respawned > 0 ? 64 : 0) | (c.surf === 2 ? 128 : 0), c.total, q(D.f) | (q(D.r) << 4) | (q(D.l) << 8) | (q(D.rt) << 12) | (q(D.e) << 16)]); }
+      if (arr.length) net.send({ t: "s", ts: Math.round(now), c: arr });
+    }
+  } else race.outHits.length = 0;
+}
 function tick(t, draw) {
-  const dt = Math.min(0.25, (t - last) / 1000); last = t;
+  const dt = Math.min(0.25, (t - last) / 1000); if (!(dt > 0.0005)) return; last = t; // no time passed (or the clock stepped back): nothing to do
   const race = S.race;
   if (world.lineup) placeTags();
   if (!race) { if (draw) { world.updateCamera(null, 0, dt); world.render(dt); } return; }
@@ -973,6 +987,7 @@ function tick(t, draw) {
   if (race.spect) { const o = race.order.filter((e) => !e.hide); focus = o[wrap(race.spectI || 0, o.length)] || null; }
   if (race.demo) focus = null;
   race.focus = focus;
+  if (!draw) { if (!race.demo) { netSend(race, now, dt); hostFinish(race, raceT); } return; } // hidden tab: simulate and talk, draw nothing
   for (const e of race.cars) {
     const c = e.c;
     if (owns(e) && raceT >= 0) {
@@ -1000,18 +1015,7 @@ function tick(t, draw) {
       near.sort((a, b) => a.d - b.d);
       audio.frame({ speed: c.speed, thr: c.thr || 0, slip: c.slip || 0, rpm: rpmOf(race.cls, c.speed) }, near.slice(0, 3));
     } else audio.frame(null, null);
-    // network: my cars at 30 Hz direct (20 Hz when relayed), dents as they happen
-    race.sendT -= dt;
-    const net = S.room?.net;
-    if (net && net.peers.size && !race.held) {
-      if (race.outHits.length) { net.send({ t: "hit", h: race.outHits.splice(0) }, { reliable: true }); }
-      if (race.sendT <= 0) {
-        race.sendT = net.direct() === net.peers.size ? 1 / 30 : 0.05; const arr = [];
-        const q = (v) => Math.round(clamp(v, 0, 1) * 15);
-        for (const e of race.cars) if (owns(e) && !e.hide) { const c = e.c, D = c.dmg; arr.push([e.id, +c.x.toFixed(2), +c.z.toFixed(2), +c.h.toFixed(3), +c.vx.toFixed(1), +c.vz.toFixed(1), +c.w.toFixed(2), +c.steer.toFixed(2), (c.boosting ? 1 : 0) | (c.brk > 0.1 ? 2 : 0) | (c.drs ? 4 : 0) | (c.retired ? 8 : 0) | (c.thr > 0.2 ? 16 : 0) | (c.slip > 0.4 ? 32 : 0) | (c.respawned > 0 ? 64 : 0) | (c.surf === 2 ? 128 : 0), c.total, q(D.f) | (q(D.r) << 4) | (q(D.l) << 8) | (q(D.rt) << 12) | (q(D.e) << 16)]); }
-        if (arr.length) net.send({ t: "s", ts: Math.round(now), c: arr });
-      }
-    } else race.outHits.length = 0;
+    netSend(race, now, dt);
     hostFinish(race, raceT);
   } else audio.frame(null, null);
   if (draw) world.render(dt);

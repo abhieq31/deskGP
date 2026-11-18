@@ -271,3 +271,8 @@ kbd{font-family:var(--mono);font-size:12px;background:#1d2230;border:1px solid #
 @media(max-height:760px){#tracks .trk canvas{aspect-ratio:16/9}}
 .trk b{font-size:10.5px}
 #o-cls button{white-space:nowrap;font-size:12.5px}
+/* narrow screens: grid columns may not grow past the panel (long content otherwise pushed the lobby off-screen) */
+.cols>div{min-width:0}
+@media(max-width:720px){.cols{grid-template-columns:minmax(0,1fr)}.opts{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.lobbyfoot button{min-width:0}}
+.seg button{min-width:0;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:420px){.opts{grid-template-columns:minmax(0,1fr)}}

@@ -25,7 +25,7 @@ export function makeBrain(skill, seed = Math.random()) {
   return { skill, off: 0, offTarget: 0, react: 0.18 + seed * 0.28, noise: seed * 100, mood: 1, stuck: 0, band: 1, st: 0 };
 }
 
-const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+const angDiff = (a, b) => { let d = a - b; if (!Number.isFinite(d)) return 0; return d - Math.round(d / (2 * Math.PI)) * 2 * Math.PI; };
 
 // Returns smooth inputs ({direct: true} tells the car model not to filter them again).
 export function drive(c, br, T, cars, dt, raceT, ctx = {}) {

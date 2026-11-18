@@ -959,7 +959,7 @@ export function createWorld(canvas) {
   // Locked rigidly to the car's exact (interpolated) position; only heading, distance and FOV are eased,
   // so uneven frame times never show up as the car juddering on screen.
   const cam = { h: 0, d: 7, fov: 62, shake: 0, orbit: 0, init: false, look: 0, rumble: 0 };
-  const angd = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+  const angd = (a, b) => { let d = a - b; if (!Number.isFinite(d)) return 0; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; return d; }; // no loop: a bad value can never hang the page
   W.shake = (a) => { cam.shake = Math.max(cam.shake, a); };
   W.snapCamera = () => { cam.init = false; };
   W.updateCamera = function (c, mode, dt) {

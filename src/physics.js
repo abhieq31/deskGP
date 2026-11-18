@@ -19,6 +19,8 @@ export function makeCar(id, cls = CLASSES.gt) {
     energy: 0.6, boosting: false, drs: false, tow: 0, slip: 0, sat: 0, surf: 0, // surf: 0 tarmac, 1 kerb, 2 grass/gravel
     idx: 0, lat: 0, total: 0, offT: 0, y: 0, bump: 0, speed: 0, wrong: 0, respawned: 0,
     dmg: { f: 0, r: 0, l: 0, rt: 0, e: 0 }, hits: [], retired: false, tl: false,
+    // driver settings and car state: active aero, brake bias, ERS mode, tyre temperatures (FL, FR, RL, RR, deg C)
+    aeroAuto: true, aeroReq: false, aeroOpen: false, bias: 0.56, ers: 1, tt: [72, 72, 70, 70], tg: [1, 1, 1, 1], overtake: false,
   };
 }
 
@@ -67,8 +69,20 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   else if (al > T.half - 0.5) { c.surf = 1; surfGrip = 0.94; }
   c.tl = al > T.half + CAR_HALF_W + 0.15; // all four wheels beyond the white line
   const D = c.dmg, perf = dm === 2;
-  const front = perf ? 1 - 0.3 * D.f : 1;
-  const Gnom = gripOf(cls, v) * (perf ? 1 - 0.12 * (D.f + D.r) * 0.5 : 1), G = Gnom * surfGrip;
+  // active aero (2026): Straight Mode opens the wings on the straights (less drag, less downforce);
+  // it snaps back to Corner Mode the moment you brake or turn in. Auto, or manual on the driver's button.
+  let straightAhead = true;
+  for (let j = 0; j <= 66; j += 6) if (Math.abs(T.lk[wrap(c.idx + j, T.n)]) > 0.0035) { straightAhead = false; break; }
+  const safe = (inp.thr || 0) > 0.85 && (inp.brk || 0) < 0.05 && Math.abs(c.steer) < 0.3 && v > 25 && c.surf < 2 && !c.retired;
+  if ((inp.brk || 0) > 0.1 || Math.abs(c.steer) > 0.45) c.aeroReq = false; // braking or turning closes the flap, as on the real cars
+  const wasOpen = c.aeroOpen;
+  c.aeroOpen = safe && (c.aeroAuto ? straightAhead : c.aeroReq);
+  c.aeroFlip = c.aeroOpen !== wasOpen;
+  const aeroDF = c.aeroOpen ? 0.55 : 1;
+  // tyres: grip depends on temperature (window 85-110 C); weight transfer under braking loads the front
+  const tg = c.tg, tyreF = (tg[0] + tg[1]) / 2, tyreAll = (tg[0] + tg[1] + tg[2] + tg[3]) / 4;
+  const front = (perf ? 1 - 0.3 * D.f : 1) * tyreF / Math.max(tyreAll, 0.5);
+  const Gnom = (cls.g0 + cls.gk * aeroDF * v * v) * tyreAll * (perf ? 1 - 0.12 * (D.f + D.r) * 0.5 : 1), G = Gnom * surfGrip;
 
   // inputs. Humans press keys, which are on/off: the wheel eases toward the key (quick first, settling at the end)
   // and the pedals ramp like a foot. Bots already send smooth inputs, so theirs go straight through.
@@ -86,14 +100,21 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const pull = perf ? (D.rt - D.l) * 0.07 : 0; // bent suspension pulls toward the damaged side
 
   // ERS boost: harvested under braking and in a tow, deployed on demand
+  // ERS: harvested under braking and in a tow, deployed on demand. Mode 0 harvest, 1 balanced, 2 attack.
+  // Overtake mode (within a second of the car ahead at the detection line) adds deployment, as in 2026.
+  const E = [{ rec: 1.6, mult: 1.18, use: 0.17 }, { rec: 1, mult: 1.32, use: 0.25 }, { rec: 0.65, mult: 1.45, use: 0.33 }][c.ers ?? 1];
+  c.overtake = !!inp.drsOk;
   c.boosting = !!inp.boost && c.energy > 0.02 && thr > 0.3 && !c.retired;
-  if (c.boosting) c.energy = Math.max(0, c.energy - 0.25 * dt);
-  else c.energy = Math.min(1, c.energy + (0.025 + 0.24 * brk * (v > 12 ? 1 : 0) + 0.08 * c.tow) * dt);
-  c.drs = !!(T.drs[c.idx] && inp.drsOk && thr > 0.9 && brk < 0.05 && c.surf < 2 && !c.retired);
+  if (c.boosting) c.energy = Math.max(0, c.energy - E.use * (c.overtake ? 0.7 : 1) * dt);
+  else c.energy = Math.min(1, c.energy + (0.025 + 0.24 * brk * (v > 12 ? 1 : 0) + 0.08 * c.tow) * E.rec * dt);
+  c.drs = c.aeroOpen; // the rear flap is open (drawn on the car, and sent to other players)
 
   // yaw: the wheel asks for a yaw rate, capped by what the front tyres can hold at this speed
   const dir = vf >= 0 ? 1 : -1;
-  const yawCap = Math.min(3.0, 1.0 * Gnom * front / Math.max(v, 5)) * clamp(v / 2.5, 0, 1);
+  // trail braking: brake pressure moves weight forward and the nose bites; a rearward brake bias rotates the car more;
+  // throttle unloads the front (understeer on power)
+  const wt = 1 + brk * (0.12 + (0.58 - (c.bias ?? 0.56)) * 1.2) - thr * 0.06 * clamp(v / 30, 0, 1);
+  const yawCap = Math.min(3.0, 1.0 * Gnom * front * wt / Math.max(v, 5)) * clamp(v / 2.5, 0, 1);
   const slipAng = Math.atan2(vl, Math.abs(vf) + 2);
   let wTarget = clamp(c.steer + pull, -1, 1) * yawCap * dir;
   wTarget += slipAng * 2.4 * clamp(v / 12, 0, 1) * clamp(c.sat * 4 - 3, 0, 1); // nose follows a slide back, near the limit only
@@ -103,10 +124,10 @@ export function stepCar(c, inp, dt, T, opts = {}) {
 
   // longitudinal
   let acc = 0;
-  const pmul = (c.boosting ? 1.32 : 1) * (perf ? 1 - 0.35 * D.e : 1);
+  const pmul = (c.boosting ? E.mult + (c.overtake ? 0.08 : 0) : 1) * (perf ? 1 - 0.35 * D.e : 1);
   if (thr > 0) acc += thr * Math.min(cls.traction * surfGrip, cls.power * pmul / Math.max(Math.abs(vf), 1));
   const regen = vf > 8 ? cls.regen * Math.max(0, 1 - thr * 6 - brk * 6) : 0; // lift-off regeneration / engine braking
-  const drag = cls.drag * (c.drs ? 0.74 : 1) * (1 - 0.35 * c.tow) * (perf ? 1 + 0.25 * D.f : 1) * v * v + extraDrag + 0.25 + regen;
+  const drag = cls.drag * (c.aeroOpen ? 0.72 : 1) * (1 - 0.35 * c.tow) * (perf ? 1 + 0.25 * D.f : 1) * v * v + extraDrag + 0.25 + regen;
   const brakeA = brk * Math.min(cls.brake, G);
   if (inp.reverse && vf < 2 && !c.retired) acc = -6 * surfGrip;
   vf += acc * dt;
@@ -128,6 +149,20 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   c.vx = fx2 * nf - fz2 * nl; c.vz = fz2 * nf + fx2 * nl;
   c.x += c.vx * dt; c.z += c.vz * dt;
   c.speed = Math.hypot(c.vx, c.vz);
+
+  // tyre temperatures: heat from cornering load (outside tyres most), braking (by bias), traction and sliding;
+  // cooled by the air. Grip falls off outside the 85-110 C window.
+  { const ay = c.w * c.speed, u = Math.min(1.5, Math.abs(ay) / Math.max(G, 1)), right = ay > 0, b = brakeA / Math.max(G, 1), a = Math.min(1, acc / Math.max(cls.traction, 1)), sl = c.slip;
+    const bias = c.bias ?? 0.56, drv = cls.id === "f1" ? [0, 0, 1, 1] : [0.8, 0.8, 1, 1];
+    for (let k = 0; k < 4; k++) {
+      const outer = (k % 2 === 0) === right ? 1.35 : 0.65, fr = k < 2;
+      // heat ~ energy dissipated in the contact patch: lateral load x speed, braking load x speed, wheelspin, sliding
+      const P = Math.abs(ay) * c.speed / (cls.g0 * 40), Pb = brakeA * c.speed / (cls.g0 * 40);
+      const heat = 1.45 * (2.6 * P * outer + 2.2 * Pb * (fr ? bias : 1 - bias) * 2 + 1.5 * a * drv[k] + 4 * Math.min(sl, 1));
+      const T0 = c.tt[k]; c.tt[k] = T0 + (heat - (T0 - 28) * (0.035 + c.speed * 0.0004)) * dt * 0.6; // thermal mass: temperatures move over seconds, not instantly
+      const t = c.tt[k]; c.tg[k] = t < 85 ? Math.max(0.82, 1 - (85 - t) * 0.0055) : t > 110 ? Math.max(0.8, 1 - (t - 110) * 0.008) : 1;
+    }
+  }
 
   // track position
   const prev = c.idx;

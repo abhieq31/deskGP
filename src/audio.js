@@ -97,6 +97,7 @@ export function createAudio() {
     rc: () => { tone(1046, 0.09, "square", 0.08); tone(1318, 0.12, "square", 0.08, 0.1); },
     shift: () => burst(0.06, 1800, 0.18, 0.4),
     drs: () => burst(0.12, 2400, 0.12, 1.8),
+    flap: () => { burst(0.16, 3200, 0.14, 0.45); tone(220, 0.08, "square", 0.04, 0.03, 1.6); },
   };
   A.fx = function (name, a) { if (!A.ready || A.muted) return; try { FX[name]?.(a); } catch {} };
   return A;

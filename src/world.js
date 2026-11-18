@@ -415,6 +415,13 @@ export function createWorld(canvas) {
         tw.position.set(x, 0, z); tw.lookAt(T.x[i], 0, T.z[i]); G.add(tw); made++; last = i;
       }
     }
+    // apex target markers: where the racing line's curvature peaks, on the inside of the corner
+    { const ap = [], n = T.n;
+      for (let i = 0; i < n; i++) { const k = Math.abs(T.lk[i]); if (k < 0.007) continue; let peak = true; for (let j = -18; j <= 18 && peak; j++) if (j && Math.abs(T.lk[wrap(i + j, n)]) > k) peak = false; if (peak && (!ap.length || i - ap[ap.length - 1] > 30)) ap.push(i); }
+      W.apexes = ap.map((i) => { const side = T.lk[i] > 0 ? 1 : -1, o = T.lo[i] + side * 1.6; return { i, x: T.x[i] + T.nx[i] * o, z: T.z[i] + T.nz[i] * o }; });
+      const mk = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.7, 10), new THREE.MeshBasicMaterial({ color: 0xff7a00, toneMapped: false }), Math.max(1, W.apexes.length)), mt2 = new THREE.Matrix4();
+      W.apexes.forEach((a, k) => { mt2.makeTranslation(a.x, 0.38, a.z); mk.setMatrixAt(k, mt2); }); mk.count = W.apexes.length; G.add(mk); W.apexMarks = mk;
+    }
     // merge every static, single-material circuit mesh by material: hundreds of pieces become a few dozen draw calls
     { G.updateMatrixWorld(true); const keep = new Set([...lights, ...flagMats]), byMat = new Map(), drop = [];
       const split = [];
@@ -466,6 +473,17 @@ export function createWorld(canvas) {
   rlGeo.setAttribute("position", new THREE.BufferAttribute(rlPos, 3)); rlGeo.setAttribute("color", new THREE.BufferAttribute(rlCol, 4));
   const rline = new THREE.Mesh(rlGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
   rline.frustumCulled = false; rline.visible = false; scene.add(rline);
+  // the next apex ahead of the car: a pulsing ring to aim at
+  const apexRing = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.05, 28), new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -6 }));
+  apexRing.rotation.x = -Math.PI / 2; apexRing.visible = false; scene.add(apexRing);
+  let apexT = 0;
+  W.setApex = function (c, on, dt) {
+    const T = W.T; if (W.apexMarks) W.apexMarks.visible = !!on;
+    if (!c || !on || !W.apexes?.length || !T) { apexRing.visible = false; return; }
+    let best = null, bd = 1e9; for (const a of W.apexes) { const d = wrap(a.i - c.idx, T.n); if (d > 4 && d < bd) { bd = d; best = a; } }
+    if (!best || bd * T.step > 450) { apexRing.visible = false; return; }
+    apexT += dt; const s2 = 1 + 0.18 * Math.sin(apexT * 7); apexRing.visible = true; apexRing.position.set(best.x, 0.06, best.z); apexRing.scale.set(s2, s2, s2);
+  };
   W.setRacingLine = function (c, mode, prof, cls) {
     const T = W.T; if (!c || !mode || !T || !prof) { rline.visible = false; return; }
     rline.visible = true;

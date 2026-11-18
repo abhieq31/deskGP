@@ -33,9 +33,16 @@
   <div id="dash">
     <div id="rpm"></div>
     <div id="speedrow"><span id="gear">1</span><span id="speed">0</span><span id="unit">km/h</span></div>
-    <div id="badges"><b id="b-drs">DRS</b><b id="b-tow">TOW</b><b id="b-ers">ERS</b></div>
+    <div id="badges"><b id="b-drs">AERO</b><b id="b-ovt">OVERTAKE</b><b id="b-tow">TOW</b><b id="b-ers">ERS</b></div>
     <div id="energy"><i></i></div>
   </div>
+  <div id="cockpit">
+    <svg id="wheel" viewBox="-60 -60 120 120" aria-label="Steering wheel: drag to steer"><g id="wheelg"><path d="M-46 -8 A47 47 0 0 1 46 -8 L40 -2 A40 40 0 0 0 -40 -2 Z" fill="#20242c" stroke="#3a4152"/><rect x="-54" y="-14" width="14" height="40" rx="6" fill="#15181e" stroke="#3a4152"/><rect x="40" y="-14" width="14" height="40" rx="6" fill="#15181e" stroke="#3a4152"/><rect x="-36" y="-12" width="72" height="34" rx="10" fill="#1a1e26" stroke="#3a4152"/><rect x="-3" y="-50" width="6" height="9" rx="2" fill="#ffd60a"/><rect x="-20" y="-4" width="40" height="16" rx="3" fill="#0b0e14"/><text id="wheelspd" x="0" y="8" text-anchor="middle" font-size="10" fill="#2fe37a" font-family="monospace">0</text><circle cx="-26" cy="14" r="3.2" fill="#e10600"/><circle cx="26" cy="14" r="3.2" fill="#2a63d4"/></g></svg>
+    <div id="pedals"><div class="pd"><i id="pd-brk"></i></div><div class="pd t"><i id="pd-thr"></i></div><span>BRK</span><span>THR</span></div>
+    <div id="tyres"><div class="ty" id="ty0"></div><div class="ty" id="ty1"></div><div class="ty" id="ty2"></div><div class="ty" id="ty3"></div><span id="tygrip">GRIP 100%</span></div>
+    <div id="dials"><div><em>BRAKE BIAS</em><b id="dl-bb">56.0</b><small>[ ]</small></div><div><em>ERS</em><b id="dl-ers">BAL</b><small>E</small></div><div><em>AERO</em><b id="dl-aero">AUTO</b><small>F / T</small></div></div>
+  </div>
+  <div id="radio" hidden><b>RADIO</b><span id="radiotext"></span></div>
   <div id="mapwrap"><canvas id="map" width="440" height="300"></canvas></div>
   <div id="spect" hidden></div>
   <div id="hold" hidden>Paused</div>
@@ -45,8 +52,10 @@
     <div class="hk"><kbd>S</kbd><kbd>&darr;</kbd><span>Brake. Brake in a straight line, then turn in.</span></div>
     <div class="hk"><kbd>A</kbd><kbd>D</kbd><span>Steer. Holding a key is the limit of grip; taps are small corrections.</span></div>
     <div class="hk"><kbd>Space</kbd><span>ERS boost. Charges under braking and in a slipstream.</span></div>
+    <div class="hk"><kbd>F</kbd><span>Active aero flap: Straight Mode on straights, closes when you brake.</span><kbd>T</kbd><span>Auto aero</span></div>
+    <div class="hk"><kbd>[</kbd><kbd>]</kbd><span>Brake bias</span><kbd>E</kbd><span>ERS mode</span><kbd>V</kbd><span>HUD</span><kbd>K</kbd><span>Engineer voice</span></div>
     <div class="hk"><kbd>C</kbd><span>Camera</span><kbd>R</kbd><span>Back on track</span><kbd>Esc</kbd><span>Pause</span><kbd>H</kbd><span>This card</span></div>
-    <i>DRS opens by itself on the straights when you are within a second of the car ahead. Press H to close.</i>
+    <i>Within a second of the car ahead at the detection line you get Overtake mode: extra electrical energy for the straight. Drag the steering wheel to steer with the mouse or a finger. Press H to close.</i>
   </div>
   <div id="interval" hidden></div>
   <div id="keys">H controls &middot; Esc pause</div>

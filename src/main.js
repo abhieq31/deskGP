@@ -26,7 +26,7 @@ const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("deskgp:" + k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("deskgp:" + k, JSON.stringify(v)); } catch {} },
 };
-const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "mclaren", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto" }, store.get("prefs3", {}));
+const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "mclaren", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto", aeroAuto: true, bias: 0.56, ers: 1, hud: "full", voice: true }, store.get("prefs3", {}));
 const savePrefs = () => store.set("prefs3", prefs);
 if (!TEAMS.some((t) => t.id === prefs.team)) prefs.team = "mclaren"; // teams from an older version
 const me = { id: newId(), name: prefs.name || "", team: prefs.team, color: teamOf(prefs.team).body, num: prefs.num || 0, joined: Date.now() };
@@ -55,6 +55,13 @@ async function copyChallenge(btn, trackIdx, clsId) {
 
 // ---------- input ----------
 const keys = new Set(), touch = { l: 0, r: 0, gas: 0, brake: 0, boost: 0 };
+// the on-screen steering wheel: drag it (mouse or finger) to steer
+const wheelIn = { on: false, v: 0 };
+{ const el = $("#wheel"), angle = (e) => { const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2; return Math.atan2(e.clientX - cx, cy - e.clientY); };
+  let a0 = 0;
+  el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); wheelIn.on = true; a0 = angle(e) - wheelIn.v * 1.75; audio.init(); });
+  el.addEventListener("pointermove", (e) => { if (!wheelIn.on) return; let a = angle(e) - a0; wheelIn.v = clamp(a / 1.75, -1, 1); });
+  const up = () => { wheelIn.on = false; wheelIn.v = 0; }; el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up); }
 function readInput() {
   const k = (...c) => c.some((x) => keys.has(x));
   let steer = (k("ArrowRight", "KeyD") ? 1 : 0) - (k("ArrowLeft", "KeyA") ? 1 : 0) + touch.r - touch.l;
@@ -65,6 +72,7 @@ function readInput() {
     thr = Math.max(thr, gp.buttons[7]?.value || 0, gp.buttons[0]?.pressed ? 1 : 0); brk = Math.max(brk, gp.buttons[6]?.value || 0);
     boost = boost || gp.buttons[2]?.pressed || gp.buttons[5]?.pressed;
   }
+  if (wheelIn.on) { steer = wheelIn.v; analog = true; }
   return { steer: clamp(steer, -1, 1), thr, brk, boost, reverse: brk > 0 && thr === 0, direct: analog };
 }
 addEventListener("keydown", (e) => {
@@ -76,6 +84,12 @@ addEventListener("keydown", (e) => {
   else if (e.code === "KeyH") toggleHelp();
   else if (S.screen !== "race") return;
   else if (e.code === "KeyC") { prefs.cam = (prefs.cam + 1) % 4; savePrefs(); toast(CAMS[prefs.cam]); }
+  else if (e.code === "KeyF") { const c = S.race?.mine?.c; if (c) { if (prefs.aeroAuto) { prefs.aeroAuto = false; savePrefs(); } c.aeroAuto = false; c.aeroReq = !c.aeroOpen; audio.fx("flap"); toast(c.aeroReq ? "Flap open: Straight Mode" : "Flap closed: Corner Mode"); } }
+  else if (e.code === "KeyT") { prefs.aeroAuto = !prefs.aeroAuto; savePrefs(); const c = S.race?.mine?.c; if (c) c.aeroAuto = prefs.aeroAuto; toast(prefs.aeroAuto ? "Active aero: automatic" : "Active aero: manual (F)"); }
+  else if (e.code === "BracketLeft" || e.code === "BracketRight") { prefs.bias = Math.round(clamp(prefs.bias + (e.code === "BracketRight" ? 0.005 : -0.005), 0.5, 0.62) * 1000) / 1000; savePrefs(); const c = S.race?.mine?.c; if (c) c.bias = prefs.bias; audio.fx("click"); }
+  else if (e.code === "KeyE") { prefs.ers = (prefs.ers + 1) % 3; savePrefs(); const c = S.race?.mine?.c; if (c) c.ers = prefs.ers; toast(`ERS: ${["Harvest", "Balanced", "Attack"][prefs.ers]}`); }
+  else if (e.code === "KeyV") { prefs.hud = prefs.hud === "full" ? "minimal" : "full"; savePrefs(); $("#hud").classList.toggle("minimal", prefs.hud !== "full"); }
+  else if (e.code === "KeyK") { prefs.voice = !prefs.voice; savePrefs(); if (!prefs.voice) speechSynthesis?.cancel(); toast(prefs.voice ? "Engineer voice on" : "Engineer voice off"); }
   else if (e.code === "KeyR") recover();
   else if (e.code === "Escape") setPaused(!S.paused);
   else if (/^Digit[1-4]$/.test(e.code)) emote(+e.code.slice(5) - 1);
@@ -93,6 +107,35 @@ addEventListener("pointerdown", () => audio.init(), { once: true });
 function setSound(on) { prefs.sound = on; savePrefs(); audio.setMuted(!on); $("#p-sound").textContent = `Sound: ${on ? "on" : "off"}`; if (S.screen === "race") toast(on ? "Sound on" : "Muted"); }
 
 // ---------- controls card: shown before a first-ever race, and on H ----------
+// ---------- engineer radio: short, spoken, rate-limited so it never chatters ----------
+let radioT = 0, radioCool = {};
+function radio(text, prio = 1, cool = 20, key = text) {
+  const now = performance.now(), race = S.race; if (!race || race.demo || S.screen !== "race") return;
+  if (now - (radioCool[key] || -1e9) < cool * 1000) return;
+  if (now - radioT < (prio >= 3 ? 1500 : 8000)) return;
+  radioT = now; radioCool[key] = now;
+  $("#radiotext").textContent = text; const r = $("#radio"); r.hidden = false; r.style.animation = "none"; void r.offsetWidth; r.style.animation = "";
+  clearTimeout(radio.h); radio.h = setTimeout(() => (r.hidden = true), 5200);
+  if (prefs.voice && prefs.sound && window.speechSynthesis) { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = 1.08; u.pitch = 0.92; u.volume = 0.9; const vs = speechSynthesis.getVoices(); u.voice = vs.find((x) => /en-GB/i.test(x.lang)) || vs.find((x) => /^en/i.test(x.lang)) || null; speechSynthesis.speak(u); } catch {} }
+}
+function engineer(race, e, raceT) {
+  const c = e.c; if (race.quali || e.fin || raceT < 0) return;
+  if (raceT > 1 && !race.radioStart) { race.radioStart = true; radio("Lights out. Tyres are cold, build the temperature through the first few corners.", 3, 999); return; }
+  const tf = (c.tt[0] + c.tt[1]) / 2, ta = c.tt.reduce((a, b) => a + b) / 4;
+  if (tf > 114) radio(`Fronts are overheating. ${c.bias > 0.555 ? "Move the brake bias rearward and e" : "E"}ase the entry speed.`, 1, 45, "hot");
+  else if (raceT > 50 && ta < 72) radio("Tyres are still cold. Push a bit harder in the corners to bring them in.", 1, 60, "cold");
+  if (c.energy > 0.98 && !c.boosting && c.aeroOpen) radio("Battery is full. Use your boost on this straight.", 1, 70, "full");
+  if (c.surf === 2 && c.speed > 15) radio("You're off. Rejoin safely.", 2, 25, "off");
+  const o = race.order, i = o.indexOf(e), B = o[i + 1];
+  if (B && c.aeroOpen) { const k = B.bk; const tb = B.bt.get(k), te = e.bt.get(k); if (tb != null && te != null && tb - te < 0.6) radio(`${B.code} is right behind you. Defend.`, 1, 45, "defend"); }
+}
+function lapRadio(race, e, fin) {
+  const o = race.order, i = o.indexOf(e), A = o[i - 1], B = o[i + 1], k = e.bk;
+  const gap = (x, y) => { const tx = x?.bt.get(k), ty = y?.bt.get(k); return tx != null && ty != null ? Math.abs(tx - ty).toFixed(1) : null; };
+  if (fin) { const p = i + 1; radio(p === 1 ? "Yes! That's P1, you've won it! Brilliant drive!" : p <= 3 ? `P${p}, that's a podium. Great job.` : p <= 10 ? `P${p}. Good points today.` : `P${p}. We'll go again.`, 3, 1, "fin"); return; }
+  if (e.lapsDone === race.laps - 1) { radio(`Final lap. P${i + 1}.${A ? ` ${A.code} is ${gap(e, A) ?? "close"} ahead.` : " Bring it home."}`, 3, 1, "final"); return; }
+  radio(`P${i + 1}.${A ? ` Gap ahead ${gap(e, A) ?? "-"}.` : ""}${B ? ` Gap behind ${gap(B, e) ?? "-"}.` : ""}`, 2, 1, "lap" + e.lapsDone);
+}
 function toggleHelp(force) { const h = $("#help"); const on = force ?? h.hidden; h.hidden = !on; if (!on && !prefs.seenControls) { prefs.seenControls = true; savePrefs(); } }
 
 // ---------- screens ----------
@@ -330,6 +373,8 @@ function startRace(go, demo) {
     if (g.id === me.id) race.mine = e;
   });
   race.spect = !demo && !race.mine;
+  if (race.mine) Object.assign(race.mine.c, { aeroAuto: prefs.aeroAuto, bias: prefs.bias, ers: prefs.ers });
+  $("#hud").classList.toggle("minimal", prefs.hud !== "full"); $("#radio").hidden = true;
   if (!demo && !quali && netNow() < go.at - 800) startIntro(race);
   if (!demo && race.mine && !prefs.seenControls) toggleHelp(true);
   if (race.mine) loadGhost(race);
@@ -429,6 +474,7 @@ function onLap(e, lt, rt, fin, remote, inv) {
     if (ok && e.rec.length > 20 && (!old || lt < old.t)) { store.set(key, { t: lt, rec: e.rec, prof: e.prof }); race.pb = { t: lt, rec: e.rec, prof: e.prof }; if (old) race.newPB = true; }
     e.rec = []; e.prof = []; e.recT = 0;
     if (!race.quali && !fin && e.lapsDone === race.laps - 1) setTimeout(() => big("FINAL LAP"), 300);
+    if (!race.quali) setTimeout(() => lapRadio(race, e, fin), 1200);
     if (race.quali && e.lapsDone === 1) big("FLYING LAP");
     if (fin) {
       if (race.quali) big("SESSION COMPLETE", e.best ? fmt(e.best) : "NO TIME SET");
@@ -455,7 +501,7 @@ function simStep(race, now) {
   if (green && race.state === "pre") { race.state = "run"; }
   const all = race.cars, phys = all.map((e) => e.c), host = isHost(), dmg = race.dmg;
   const leaderLaps = Math.max(0, ...all.map((e) => e.lapsDone));
-  if (race.gp && !race.drsOn && leaderLaps >= 2) { race.drsOn = true; raceControl("DRS ENABLED", true, true); explain("drs"); }
+  if (race.gp && !race.drsOn && leaderLaps >= 2) { race.drsOn = true; raceControl("OVERTAKE MODE ENABLED", true, true); explain("drs"); }
   for (const e of all) {
     const c = e.c;
     if (e.hide) continue;
@@ -486,6 +532,7 @@ function simStep(race, now) {
         let ahead = 1e9; for (const o of all) { if (o === e || o.hide) continue; const d = o.c.total - c.total; if (d > 0 && d < ahead) ahead = d; }
         const gap = (ahead * T.step) / Math.max(c.speed, 20);
         e.drsArm[k] = race.quali || gap < 1.0;
+        if (e.drsArm[k] && !race.quali && race.drsOn) { e.c.energy = Math.min(1, e.c.energy + 0.2); if (e === race.mine) { audio.fx("drs"); radio("Overtake mode. You're within a second, use the energy.", 2, 30); } }
       }
     }
     inp.drsOk = zi >= 0 && (race.quali || (!!e.drsArm[zi] && race.drsOn && !(race.gp && yellowIn(race, T.sector(T.drsZones[zi].a), raceT))));
@@ -575,7 +622,7 @@ const RULES = {
   col: "Causing a collision: running into the back of another car costs 5 seconds. Penalties are added to your race time.",
   yellow: "Yellow flag: an incident ahead. Slow down; no overtaking and no DRS in that sector.",
   blue: "Blue flag: a car a lap ahead is right behind you. Let it through.",
-  drs: "DRS: from lap 3, if you are within one second of the car ahead at the detection line, your rear wing opens on the straight.",
+  drs: "Overtake mode: from lap 3, if you are within one second of the car ahead at the detection line, you get extra electrical energy for the straight. Active aero opens the wings on every straight for everyone.",
 };
 function explain(k) { const L = (prefs.learned ||= {}); if (L[k]) return; L[k] = 1; savePrefs(); const race = S.race; if (race) { race.rcQ.push(RULES[k]); feed(`<i>${esc(RULES[k])}</i>`); } }
 function flushHits(race, e) {
@@ -671,7 +718,16 @@ function updateHud(race, dt, now) {
   const g = gearOf(cls, c.speed); setText("#gear", cls.id === "f1" ? String(g) : c.boosting ? "B" : "D");
   if (view === race.mine && g > (race.lastGear || 0) && race.lastGear) audio.fx("shift"); race.lastGear = g;
   const rp = Math.round((cls.id === "f1" ? rpmOf(cls, c.speed) : c.thr) * 15); if (hudCache.rpm !== rp) { hudCache.rpm = rp; [...$("#rpm").children].forEach((el, i) => el.classList.toggle("on", i < rp)); }
-  setClass("#b-drs", "on", !!c.drs); setClass("#b-drs", "ready", !c.drs && !!view.drsReady); setClass("#b-tow", "on", c.tow > 0.15); setClass("#b-ers", "on", !!c.boosting);
+  setClass("#b-drs", "on", !!c.aeroOpen); setClass("#b-ovt", "on", !!view.drsReady || !!c.overtake);
+  if (view === race.mine && prefs.hud === "full") {
+    $("#wheelg").setAttribute("transform", `rotate(${(c.steer * 100).toFixed(1)})`); setText("#wheelspd", String(kmh));
+    $("#pd-thr").style.height = (c.thr * 100).toFixed(0) + "%"; $("#pd-brk").style.height = (c.brk * 100).toFixed(0) + "%";
+    const tk = c.tt.map((x) => Math.round(x)).join();
+    if (hudCache.tt !== tk) { hudCache.tt = tk; c.tt.forEach((t, k) => { const el = $("#ty" + k); el.textContent = Math.round(t); el.style.background = t < 70 ? "#3a86ff" : t < 85 ? "#7ee0ff" : t <= 110 ? "#2fe37a" : t <= 120 ? "#ffb020" : "#ff3b3b"; }); setText("#tygrip", `GRIP ${Math.round(c.tg.reduce((a, b) => a + b) / 4 * 100)}%`); }
+    setText("#dl-bb", (c.bias * 100).toFixed(1)); setText("#dl-ers", ["HARV", "BAL", "ATK"][c.ers]); setText("#dl-aero", c.aeroAuto ? (c.aeroOpen ? "AUTO\u00b7S" : "AUTO\u00b7C") : c.aeroOpen ? "STRAIGHT" : "CORNER");
+  }
+  if (view === race.mine && c.aeroFlip) { audio.fx("flap"); c.aeroFlip = false; }
+  if (view === race.mine) engineer(race, view, raceT); setClass("#b-tow", "on", c.tow > 0.15); setClass("#b-ers", "on", !!c.boosting);
   const en = Math.round(c.energy * 100); if (hudCache.en !== en) { hudCache.en = en; $("#energy i").style.width = en + "%"; $("#energy").classList.toggle("full", en > 97); }
   $("#wrong").hidden = !(view === race.mine && c.wrong > 1.2);
   const lapNo = clamp(view.lapsDone + 1, 1, race.laps);
@@ -889,6 +945,7 @@ function frame(t) {
   if (focus && raceT >= 0 && owns(focus)) { const c = focus.c, x = c.x, z = c.z, h = c.h; c.x = focus.px + (x - focus.px) * al; c.z = focus.pz + (z - focus.pz) * al; c.h = focus.ph + angd(h, focus.ph) * al; world.updateCamera(c, prefs.cam, dt); c.x = x; c.z = z; c.h = h; }
   else world.updateCamera(focus ? focus.c : null, prefs.cam, dt);
   world.setRacingLine(!race.demo && focus === race.mine && race.mine && !race.mine.fin ? race.mine.c : null, prefs.line, race.T.v, race.cls);
+  world.setApex(!race.demo && focus === race.mine && race.mine && !race.mine.fin ? race.mine.c : null, prefs.line > 0 && !race.demo, dt);
   if (!race.demo) {
     updateHud(race, dt, now);
     if (focus) {

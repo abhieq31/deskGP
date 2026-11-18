@@ -28,6 +28,8 @@ const MOODS = {
   day: { top: "#2f78d0", mid: "#9cc6ee", low: "#e3edf4", hill: "#6d8c78", fog: 0xcad9e6, fogD: 0.00055, sun: 0xfff0d2, sunI: 3.2, sunDir: [-0.45, 0.8, 0.4], hemiS: 0xcfe2ff, hemiG: 0x5c6b46, hemiI: 0.9, exp: 0.95, grass: "#4f8a3c", grass2: "#467d35", hillCol: 0x5f8a45 },
   sunset: { top: "#232a63", mid: "#ef855a", low: "#ffd28c", hill: "#5a3d55", fog: 0xe3a37a, fogD: 0.0007, sun: 0xffa055, sunI: 3.4, sunDir: [0.75, 0.3, -0.4], hemiS: 0xb9a0e0, hemiG: 0x6a4a34, hemiI: 0.8, exp: 1.0, grass: "#6a8238", grass2: "#5e7631", hillCol: 0x8a7a45 },
   alpine: { top: "#1f6fd1", mid: "#8fc3f0", low: "#dfeaf3", hill: "#5f7f86", fog: 0xc4d6e4, fogD: 0.00042, sun: 0xfff4de, sunI: 3.3, sunDir: [-0.35, 0.82, 0.45], hemiS: 0xcfe4ff, hemiG: 0x55703f, hemiI: 0.95, exp: 0.95, grass: "#4c9a3a", grass2: "#438c33", hillCol: 0x4f8a3c },
+  dry: { top: "#2a76cf", mid: "#a9cdee", low: "#efe9dc", hill: "#8f8a6c", fog: 0xe3ddcc, fogD: 0.0005, sun: 0xfff0cf, sunI: 3.4, sunDir: [-0.4, 0.8, 0.42], hemiS: 0xd8e4f5, hemiG: 0x75703f, hemiI: 0.9, exp: 0.95, grass: "#7c8f3e", grass2: "#718338", hillCol: 0x8c8a4c },
+  dunes: { top: "#3a7cc8", mid: "#a8cbe8", low: "#eef1f2", hill: "#9aa078", fog: 0xd7e0e6, fogD: 0.0005, sun: 0xfff2dc, sunI: 3.2, sunDir: [-0.5, 0.75, 0.4], hemiS: 0xd2e2f3, hemiG: 0x8a8460, hemiI: 0.95, exp: 0.95, grass: "#8f9a56", grass2: "#a39a68", hillCol: 0xb9ab7c },
   night: { top: "#02040a", mid: "#0a1226", low: "#1c2746", hill: "#0a0f1c", fog: 0x0b1222, fogD: 0.0009, sun: 0xdfe8ff, sunI: 1.6, sunDir: [-0.2, 0.95, 0.25], hemiS: 0x7086c0, hemiG: 0x1c2018, hemiI: 0.8, exp: 1.1, grass: "#243f27", grass2: "#1f3822", hillCol: 0x1e3322 },
 };
 
@@ -198,7 +200,7 @@ export function createWorld(canvas) {
   const decal = (o) => std({ roughness: 0.9, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...o });
   const flat = (w, d, mat, x, z, rot, y) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.set(-Math.PI / 2, 0, -rot); m.position.set(x, y, z); m.receiveShadow = true; return m; };
   const distToTrack = (T, x, z) => T.dist(x, z, 600);
-  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95 };
+  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95, imola: 45, zandvoort: 34, cota: 28, hungaroring: 55, barcelona: 48, albertpark: 6 };
   const hillNoise = (x, z) => Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0053 + 0.4) * 0.6 + Math.sin(x * 0.011 + z * 0.007) * 0.25 + Math.sin(x * 0.023 - z * 0.019 + 2) * 0.1 + 0.55;
   const wallOff = (T, s) => (i) => s * (s > 0 ? T.wp[i] : T.wm[i]);
 
@@ -523,6 +525,9 @@ export function createWorld(canvas) {
   const f1Taper = (x, y) => (x > 0.7 ? 1 - 0.74 * clamp((x - 0.7) / 2.15, 0, 1) ** 0.8 : x < -1.2 ? 1 - 0.5 * clamp((-1.2 - x) / 1, 0, 1) : 1) * (y > 0.64 ? Math.max(0.32, 1 - (y - 0.64) * 2.0) : 1);
   const F1_POD = [[0.62, 0.24], [0.66, 0.5], [0.42, 0.58], [0.0, 0.57], [-1.0, 0.42], [-1.75, 0.22], [-1.8, 0.14], [0.1, 0.14]];
   const podTaper = (x, y) => (x < -0.4 ? 1 - 0.6 * clamp((-0.4 - x) / 1.4, 0, 1) : 1) * (y > 0.42 ? 1 - (y - 0.42) * 1.6 : y < 0.24 ? 0.7 + (y - 0.14) * 3 : 1);
+  // Classic: a late-1960s cigar-shaped single-seater, engine exposed behind the driver, no wings
+  const CL_BODY = [[2.1, 0.3], [2.02, 0.42], [1.6, 0.5], [0.9, 0.57], [0.55, 0.6], [0.42, 0.56], [-0.12, 0.56], [-0.22, 0.7], [-0.55, 0.64], [-0.8, 0.46], [-1.55, 0.42], [-1.78, 0.34], [-1.78, 0.2], [-0.9, 0.15], [1.7, 0.17], [2.06, 0.22]];
+  const clTaper = (x, y) => (x > 0.8 ? 1 - 0.6 * clamp((x - 0.8) / 1.3, 0, 1) ** 1.3 : x < -0.9 ? 1 - 0.35 * clamp((-0.9 - x) / 0.9, 0, 1) : 1) * (y > 0.46 ? 1 - (y - 0.46) * 1.5 : 1);
   const geoCache = {};
   const cached = (k, f) => geoCache[k] || (geoCache[k] = f());
   const tyreMat = std({ color: 0x0e0e11, roughness: 0.9, envMapIntensity: 0.25 }), capMat = std({ color: 0x2c2f36, roughness: 0.25, metalness: 0.9 }), glassMat = std({ color: 0x05070a, roughness: 0.03, metalness: 0.9, envMapIntensity: 1.8 }), carbon = std({ color: 0x101114, roughness: 0.45, metalness: 0.3, envMapIntensity: 0.6 });
@@ -547,7 +552,11 @@ export function createWorld(canvas) {
     const parts = [], cyl = (rr, l, seg) => { const k = new THREE.CylinderGeometry(rr, rr, l, seg); k.rotateX(Math.PI / 2); return k; };
     parts.push(colored(cyl(r, wdt, 26), 0x111114));
     parts.push(colored(cyl(r * 0.68, wdt + 0.02, 18), f1 ? 0x1a1b1f : 0x34373e));
-    if (f1) { const cv = new THREE.CircleGeometry(r * 0.64, 22); cv.rotateY(side > 0 ? 0 : Math.PI); cv.translate(0, 0, side * (wdt / 2 + 0.013)); parts.push(colored(cv, 0x1c1d22)); const hub = new THREE.CircleGeometry(r * 0.12, 12); hub.rotateY(side > 0 ? 0 : Math.PI); hub.translate(0, 0, side * (wdt / 2 + 0.016)); parts.push(colored(hub, accent)); const rim = new THREE.TorusGeometry(r * 0.64, 0.012, 4, 26); rim.translate(0, 0, side * (wdt / 2 + 0.012)); parts.push(colored(rim, accent)); const ring = new THREE.TorusGeometry(r * 0.86, 0.011, 4, 30); ring.translate(0, 0, side * (wdt / 2 + 0.006)); parts.push(colored(ring, 0xe8c400)); }
+    if (f1 === "classic") { // tall, narrow tyres on magnesium wheels with spokes
+      const rimG = cyl(r * 0.62, wdt + 0.03, 20); parts.push(colored(rimG, 0xb7bbc2));
+      for (let k = 0; k < 8; k++) { const sp = new THREE.BoxGeometry(r * 1.18, 0.035, 0.03); sp.rotateZ((k * Math.PI) / 8); sp.translate(0, 0, side * (wdt / 2 + 0.018)); parts.push(colored(sp, 0x8c9098)); }
+      const hub = new THREE.CircleGeometry(r * 0.13, 10); hub.rotateY(side > 0 ? 0 : Math.PI); hub.translate(0, 0, side * (wdt / 2 + 0.024)); parts.push(colored(hub, 0xd8c070));
+    } else if (f1) { const cv = new THREE.CircleGeometry(r * 0.64, 22); cv.rotateY(side > 0 ? 0 : Math.PI); cv.translate(0, 0, side * (wdt / 2 + 0.013)); parts.push(colored(cv, 0x1c1d22)); const hub = new THREE.CircleGeometry(r * 0.12, 12); hub.rotateY(side > 0 ? 0 : Math.PI); hub.translate(0, 0, side * (wdt / 2 + 0.016)); parts.push(colored(hub, accent)); const rim = new THREE.TorusGeometry(r * 0.64, 0.012, 4, 26); rim.translate(0, 0, side * (wdt / 2 + 0.012)); parts.push(colored(rim, accent)); const ring = new THREE.TorusGeometry(r * 0.86, 0.011, 4, 30); ring.translate(0, 0, side * (wdt / 2 + 0.006)); parts.push(colored(ring, 0xe8c400)); }
     else for (let k = 0; k < 5; k++) { const sp = new THREE.BoxGeometry(0.42, 0.055, 0.04); sp.rotateZ((k * 2 * Math.PI) / 5); sp.translate(0, 0, side * (wdt / 2 + 0.012)); parts.push(colored(sp, 0x9aa1ab)); }
     return mergeGeometries(parts, false);
   }
@@ -559,7 +568,7 @@ export function createWorld(canvas) {
   // Build a car (not added to any scene). team: { name, body, accent, ink, second[] }.
   function buildCar(color, clsId, opts = {}) {
     const g = new THREE.Group(), tilt = new THREE.Group(); g.add(tilt);
-    const ghost = !!opts.ghost, f1 = clsId === "f1", team = opts.team || { name: opts.sponsor || "DESKGP", accent: opts.accent || "#111318", ink: ink(color), second: [] };
+    const ghost = !!opts.ghost, classic = clsId === "classic", f1 = clsId === "f1" || classic, team = opts.team || { name: opts.sponsor || "DESKGP", accent: opts.accent || "#111318", ink: ink(color), second: [] };
     const paint = ghost ? std({ color, transparent: true, opacity: 0.25, depthWrite: false, roughness: 0.4 }) : new THREE.MeshPhysicalMaterial({ color, roughness: 0.24, metalness: 0.45, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.3 });
     const accentMat = ghost ? paint : new THREE.MeshPhysicalMaterial({ color: team.accent, roughness: 0.3, metalness: 0.4, clearcoat: 0.8, envMapIntensity: 1.1 });
     const dark = ghost ? paint : carbon;
@@ -575,10 +584,35 @@ export function createWorld(canvas) {
     };
     const parts = {}, deform = [];
     let wheelR = 0.37;
-    const wheelSpec = f1 ? [[1.86, 0.84, 1, 0.36, 0.37], [1.86, -0.84, 1, 0.36, 0.37], [-1.72, 0.82, 0, 0.37, 0.46], [-1.72, -0.82, 0, 0.37, 0.46]] : [[1.47, 0.89, 1, 0.37, 0.3], [1.47, -0.89, 1, 0.37, 0.3], [-1.45, 0.89, 0, 0.37, 0.3], [-1.45, -0.89, 0, 0.37, 0.3]];
+    const wheelSpec = classic ? [[1.28, 0.7, 1, 0.3, 0.2], [1.28, -0.7, 1, 0.3, 0.2], [-1.12, 0.72, 0, 0.33, 0.3], [-1.12, -0.72, 0, 0.33, 0.3]] : f1 ? [[1.86, 0.84, 1, 0.36, 0.37], [1.86, -0.84, 1, 0.36, 0.37], [-1.72, 0.82, 0, 0.37, 0.46], [-1.72, -0.82, 0, 0.37, 0.46]] : [[1.47, 0.89, 1, 0.37, 0.3], [1.47, -0.89, 1, 0.37, 0.3], [-1.45, 0.89, 0, 0.37, 0.3], [-1.45, -0.89, 0, 0.37, 0.3]];
     let flap, brake, glow;
     const title = team.short || team.name, sec = team.second || [];
-    if (!f1) {
+    if (classic) {
+      const body = add(new THREE.Mesh(ghost ? cached("clb", () => shell(CL_BODY, 0.6, clTaper, 0.1)) : shell(CL_BODY, 0.6, clTaper, 0.1), paint), 0, 0, 0, tilt, false); deform.push(body);
+      if (!ghost) {
+        const alu = std({ color: 0x8e939b, roughness: 0.32, metalness: 0.85 }), chrome = std({ color: 0xd9dde3, roughness: 0.15, metalness: 1 });
+        B(0.72, 0.26, 0.46, alu, -1.15, 0.5, 0);                                     // the engine, out in the open
+        for (const s of [-1, 1]) {
+          B(0.68, 0.06, 0.1, dark, -1.15, 0.66, s * 0.13);                            // cam covers
+          for (let k = 0; k < 4; k++) add(new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.026, 0.12, 8), chrome), -0.88 - k * 0.17, 0.75, s * 0.05);   // intake trumpets
+          R(new V3(-0.95, 0.46, s * 0.26), new V3(-1.5, 0.5, s * 0.3), 0.032, chrome); R(new V3(-1.5, 0.5, s * 0.3), new V3(-1.92, 0.64, s * 0.22), 0.032, chrome); // exhausts
+          R(new V3(-1.05, 0.4, s * 0.26), new V3(-1.55, 0.44, s * 0.32), 0.03, chrome); R(new V3(-1.55, 0.44, s * 0.32), new V3(-1.95, 0.56, s * 0.3), 0.03, chrome);
+          // suspension: thin wishbones and rockers out to the wheels
+          R(new V3(1.0, 0.36, s * 0.22), new V3(1.28, 0.34, s * 0.6), 0.016, dark); R(new V3(1.5, 0.3, s * 0.2), new V3(1.28, 0.3, s * 0.6), 0.016, dark); R(new V3(1.2, 0.2, s * 0.2), new V3(1.28, 0.24, s * 0.6), 0.016, dark);
+          R(new V3(-0.8, 0.36, s * 0.3), new V3(-1.12, 0.36, s * 0.62), 0.018, dark); R(new V3(-1.45, 0.3, s * 0.24), new V3(-1.12, 0.3, s * 0.62), 0.018, dark); R(new V3(-0.9, 0.2, s * 0.28), new V3(-1.12, 0.24, s * 0.62), 0.018, dark);
+        }
+        B(0.36, 0.2, 0.38, dark, -1.72, 0.3, 0);                                      // gearbox
+        const scr = add(new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.3, 0.14, 14, 1, true, -1.15, 2.3), std({ color: 0xaecbe0, transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0.2, side: THREE.DoubleSide })), 0.55, 0.66, 0); scr.rotation.y = Math.PI / 2; scr.castShadow = false; // wrap-round screen
+        const hoop = add(new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.018, 6, 14, Math.PI), chrome), -0.2, 0.66, 0); hoop.rotation.y = Math.PI / 2;
+        add(new THREE.Mesh(new THREE.SphereGeometry(0.165, 16, 12), std({ color: opts.helmet || team.accent || 0xf2f2f2, roughness: 0.25, metalness: 0.2 })), 0.12, 0.8, 0); // open-face helmet
+        const gg = add(new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 6, 16, Math.PI * 0.9), chromeLess), 0.16, 0.8, 0); gg.rotation.set(0, Math.PI / 2, 0); // goggles
+        const mouth = add(new THREE.Mesh(new THREE.CircleGeometry(0.15, 18), chromeLess), 2.17, 0.3, 0); mouth.rotation.y = Math.PI / 2; mouth.scale.set(1, 0.6, 1); // radiator intake in the nose
+        for (const [k, sd] of [["mirrorL", -1], ["mirrorR", 1]]) { const m = new THREE.Group(); const h = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 12), chrome), st = new THREE.Mesh(rodGeo(new V3(0, -0.08, -sd * 0.06), new V3(0, 0, 0), 0.01), dark); h.rotation.z = Math.PI / 2; m.add(h, st); m.position.set(0.62, 0.68, sd * 0.36); tilt.add(m); parts[k] = m; }
+        // livery of the era: one colour, a white roundel with the number, the name small on the flank
+        for (const sd of [-1, 1]) { const ry = sd > 0 ? 0 : Math.PI; decal(numTex(opts.number ?? 1), 0.36, 0.36, -0.42, 0.42, sd * 0.413, ry); decal(decalTex(title, team.ink || ink(color)), 0.7, 0.13, 0.95, 0.36, sd * 0.41, ry); }
+        decal(numTex(opts.number ?? 1), 0.3, 0.3, 1.35, 0.545, 0, Math.PI / 2, -Math.PI / 2 + 0.12);
+      }
+    } else if (!f1) {
       const body = add(new THREE.Mesh(ghost ? cached("gtb", () => shell(GT_BODY, 1.76, gtTaper)) : shell(GT_BODY, 1.76, gtTaper), paint), 0, 0, 0, tilt, false); deform.push(body);
       const cab = add(new THREE.Mesh(ghost ? cached("gtc", () => shell(GT_CAB, 1.36, gtCabTaper, 0.08)) : shell(GT_CAB, 1.36, gtCabTaper, 0.08), ghost ? paint : glassMat), 0, 0, 0, tilt, false); deform.push(cab);
       if (!ghost) {
@@ -664,7 +698,7 @@ export function createWorld(canvas) {
     for (const [x, z, front, r, wdt] of wheelSpec) {
       wheelR = r;
       const side = Math.sign(z), piv = new THREE.Group(); piv.position.set(x, r, z); tilt.add(piv);
-      const w = new THREE.Mesh(ghost ? cached(`w${r}${wdt}`, () => { const k = new THREE.CylinderGeometry(r, r, wdt, 24); k.rotateX(Math.PI / 2); return k; }) : cached(`wheel${f1}${r}${wdt}${side}${team.accent}`, () => wheelGeo(f1, r, wdt, side, team.accent)), ghost ? paint : wheelMat);
+      const w = new THREE.Mesh(ghost ? cached(`w${r}${wdt}`, () => { const k = new THREE.CylinderGeometry(r, r, wdt, 24); k.rotateX(Math.PI / 2); return k; }) : cached(`wheel${classic ? "c" : f1}${r}${wdt}${side}${team.accent}`, () => wheelGeo(classic ? "classic" : f1, r, wdt, side, team.accent)), ghost ? paint : wheelMat);
       w.castShadow = !ghost; piv.add(w);
       if (!ghost) { const br = new THREE.Mesh(cached(`brk${f1}${r}${wdt}${side}`, () => brakeGeo(f1, r, wdt, side)), wheelMat); br.castShadow = false; piv.add(br); }
       wheels.push({ piv, w, front, z });
@@ -696,7 +730,7 @@ export function createWorld(canvas) {
     const byMat = new Map();
     for (const m of statics) { if (m.material.map) continue; m.updateMatrix(); const gg = m.geometry.clone().applyMatrix4(m.matrix); if (gg.index === null) continue; for (const k of Object.keys(gg.attributes)) if (k !== "position" && k !== "normal") gg.deleteAttribute(k); const l = byMat.get(m.material) || []; l.push(gg); byMat.set(m.material, l); tilt.remove(m); m.geometry.dispose?.(); }
     for (const [mat, list] of byMat) { const merged = mergeGeometries(list, false); if (!merged) continue; const mm = new THREE.Mesh(merged, mat); mm.castShadow = mat === paint || mat === carbon || mat === accentMat; mm.receiveShadow = true; tilt.add(mm); list.forEach((x) => x.dispose()); }
-    return { g, tilt, wheels, wheelR, flap, brake, glow, parts, deform, gone: new Set(), ghost, f1, spin: 0, roll: 0, pitch: 0, lastSkid: null, emo: null, emoT: 0, hitsSeen: 0, paint };
+    return { g, tilt, wheels, wheelR, flap, brake, glow, parts, deform, gone: new Set(), ghost, f1, classic, spin: 0, roll: 0, pitch: 0, lastSkid: null, emo: null, emoT: 0, hitsSeen: 0, paint };
   }
   W.buildCar = buildCar;
 
@@ -840,7 +874,7 @@ export function createWorld(canvas) {
     v.spin -= (vf / v.wheelR) * dt;
     for (const w of v.wheels) { w.w.rotation.z = v.spin; if (w.front) w.piv.rotation.y = -(c.steer || 0) * 0.45; }
     const latG = (c.w || 0) * sp;
-    v.roll += (clamp(latG * (v.f1 ? 0.0012 : 0.0026), -0.075, 0.075) - v.roll) * Math.min(1, 9 * dt);
+    v.roll += (clamp(latG * (v.classic ? 0.0045 : v.f1 ? 0.0012 : 0.0026), -0.075, 0.075) - v.roll) * Math.min(1, 9 * dt);
     v.pitch += (((c.brk || 0) * (v.f1 ? 0.018 : 0.04) - (c.thr || 0) * 0.016 * (sp < 45 ? 1 : 0.3)) - v.pitch) * Math.min(1, 8 * dt);
     v.tilt.rotation.x = v.roll; v.tilt.rotation.z = v.pitch;
     if (v.flap) { if (v.f1) { v.flap.rotation.z = c.drs ? 0.05 : -0.45; v.flap.position.y = c.drs ? 1.12 : 1.08; } else { v.flap.position.y = c.drs ? 0.99 : 1.06; v.flap.rotation.z = c.drs ? 0 : -0.35; } }
@@ -935,7 +969,7 @@ export function createWorld(canvas) {
       camera.position.set(Math.sin(cam.orbit) * 430, 110 + Math.sin(cam.orbit * 0.7) * 30, Math.cos(cam.orbit) * 360 + 60); tmp2.set(0, 0, 0); wantFov = 48;
       aimSun(0, 0, 640); head.intensity = 0; cam.init = false; cam.fov = wantFov;
     } else {
-      const sp = c.speed || 0, y = c.y || 0, f1 = c.cls?.id === "f1";
+      const sp = c.speed || 0, y = c.y || 0, f1 = c.cls?.id !== "gt"; // single-seaters: low camera
       const vh = sp > 8 ? Math.atan2(c.vz, c.vx) : c.h;
       const target = c.h + clamp(angd(vh, c.h), -0.3, 0.3) * 0.2; // follow the nose, a hint of the slide
       if (!cam.init) { cam.h = target; cam.d = 7; cam.look = 0; }

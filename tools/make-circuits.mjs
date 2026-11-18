@@ -4,9 +4,15 @@ import fs from "node:fs";
 const PICK = [
   { src: "it-1922", id: "monza", name: "Monza", full: "Autodromo Nazionale Monza", country: "Italy", mood: "day", width: 14, drs: 2, trees: 1300, pine: 0.15, blurb: "The Temple of Speed. Long straights, slipstream, and three chicanes where the race is won or lost on the brakes." },
   { src: "gb-1948", id: "silverstone", name: "Silverstone", full: "Silverstone Circuit", country: "Great Britain", mood: "day", width: 15, drs: 2, trees: 240, pine: 0.2, blurb: "Fast and flowing. Commit through Maggotts and Becketts and the lap comes to you." },
-  { src: "be-1925", id: "spa", name: "Spa-Francorchamps", full: "Circuit de Spa-Francorchamps", country: "Belgium", mood: "sunset", width: 14, drs: 2, trees: 1700, pine: 0.85, blurb: "Seven kilometres through the forest: La Source, Eau Rouge, the Kemmel straight and Blanchimont flat out." },
-  { src: "at-1969", id: "redbullring", name: "Red Bull Ring", full: "Red Bull Ring, Spielberg", country: "Austria", mood: "alpine", width: 14, drs: 3, trees: 1400, pine: 0.8, mountains: true, blurb: "Short, fast and up in the Styrian mountains: three straights, three heavy stops, and the whole lap in about a minute." },
+  { src: "be-1925", id: "spa", name: "Spa-Francorchamps", short: "Spa", full: "Circuit de Spa-Francorchamps", country: "Belgium", mood: "sunset", width: 14, drs: 2, trees: 1700, pine: 0.85, blurb: "Seven kilometres through the forest: La Source, Eau Rouge, the Kemmel straight and Blanchimont flat out." },
+  { src: "at-1969", id: "redbullring", name: "Red Bull Ring", short: "Austria", full: "Red Bull Ring, Spielberg", country: "Austria", mood: "alpine", width: 14, drs: 3, trees: 1400, pine: 0.8, mountains: true, blurb: "Short, fast and up in the Styrian mountains: three straights, three heavy stops, and the whole lap in about a minute." },
   { src: "br-1940", id: "interlagos", name: "Interlagos", full: "Autódromo José Carlos Pace", country: "Brazil", mood: "day", width: 14, drs: 2, trees: 420, pine: 0.05, skyline: true, blurb: "Anticlockwise and short. The Senna S, a long uphill drag to the line, and always a fight." },
+  { src: "it-1953", id: "imola", name: "Imola", full: "Autodromo Enzo e Dino Ferrari", country: "Italy", mood: "day", width: 13, drs: 1, trees: 1500, pine: 0.15, blurb: "Old school and narrow through the park by the river: Tamburello, Acque Minerali, Rivazza. Kerbs bite and mistakes cost." },
+  { src: "nl-1948", id: "zandvoort", name: "Zandvoort", full: "Circuit Zandvoort", country: "Netherlands", mood: "dunes", width: 12, drs: 2, trees: 160, pine: 0.7, blurb: "Up and down the North Sea dunes, with the banked Hugenholtz and Arie Luyendyk corners. Sand blows onto the line." },
+  { src: "us-2012", id: "cota", name: "Circuit of the Americas", short: "COTA", full: "Circuit of the Americas", country: "United States", mood: "dry", width: 15, drs: 2, trees: 260, pine: 0.05, blurb: "The climb to Turn 1, the fast esses, then a long back straight. A bit of every great circuit in one Texas lap." },
+  { src: "hu-1986", id: "hungaroring", name: "Hungaroring", short: "Hungary", full: "Hungaroring", country: "Hungary", mood: "dry", width: 13, drs: 1, trees: 700, pine: 0.15, blurb: "Twisty, dusty and hot in a valley outside Budapest. Hard to pass, so qualifying and the start matter most." },
+  { src: "es-1991", id: "barcelona", name: "Barcelona", full: "Circuit de Barcelona-Catalunya", country: "Spain", mood: "dry", width: 14, drs: 2, trees: 600, pine: 0.65, blurb: "The circuit every team knows by heart: long Turn 3, the fast Campsa, and a slipstream down to Turn 1." },
+  { src: "au-1953", id: "albertpark", name: "Albert Park", short: "Melbourne", full: "Albert Park Circuit, Melbourne", country: "Australia", mood: "day", width: 14, drs: 3, trees: 900, pine: 0.1, minGap: 10, blurb: "Fast and flowing around the lake in a Melbourne park. Quick chicanes and a season-opening crowd." },
 ];
 const d = JSON.parse(fs.readFileSync("tools/f1-circuits.geojson", "utf8"));
 const out = PICK.map((p) => {
@@ -14,9 +20,9 @@ const out = PICK.map((p) => {
   const lat0 = c.reduce((a, q) => a + q[1], 0) / c.length, lon0 = c.reduce((a, q) => a + q[0], 0) / c.length;
   let P = c.map(([lo, la]) => [(lo - lon0) * Math.cos(lat0 * Math.PI / 180) * 111320, -(la - lat0) * 110540]);
   if (Math.hypot(P[0][0] - P.at(-1)[0], P[0][1] - P.at(-1)[1]) < 3) P.pop(); // closed ring
-  const Q = [P[0]]; for (const q of P.slice(1)) if (Math.hypot(q[0] - Q.at(-1)[0], q[1] - Q.at(-1)[1]) > 6) Q.push(q);
+  const Q = [P[0]]; for (const q of P.slice(1)) if (Math.hypot(q[0] - Q.at(-1)[0], q[1] - Q.at(-1)[1]) > (p.minGap || 6)) Q.push(q); // closely spaced survey points make kinks
   const xs = Q.map((q) => q[0]), zs = Q.map((q) => q[1]), cx = (Math.max(...xs) + Math.min(...xs)) / 2, cz = (Math.max(...zs) + Math.min(...zs)) / 2;
-  const { src, ...meta } = p;
+  const { src, minGap, ...meta } = p;
   return { ...meta, length: f.properties.length, pts: Q.map(([x, z]) => [Math.round(x - cx), Math.round(z - cz)]) };
 });
 fs.writeFileSync("src/circuits.js", `// Generated by tools/make-circuits.mjs from bacinger/f1-circuits (MIT, (c) 2019-2025 Tomislav Bacinger).\n// Real circuit centrelines in metres (x east, z south), in race direction, starting at the start/finish line.\nexport const CIRCUITS = ${JSON.stringify(out)};\n`);

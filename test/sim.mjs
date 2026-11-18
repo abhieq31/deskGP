@@ -8,7 +8,7 @@ let fail = 0;
 const d0 = (v) => Math.round(v);
 const bad = (m) => { console.log("  FAIL " + m); fail++; };
 const only = process.env.CLS ? [CLASSES[process.env.CLS]] : Object.values(CLASSES);
-for (const def of TRACKS) {
+for (const def of TRACKS.filter((d) => !process.env.TRACKS || process.env.TRACKS.split(",").includes(d.id))) {
   const T = buildTrack(def);
   console.log(`\n${def.name}: ${(T.len / 1000).toFixed(2)} km`);
   console.log(`  official ${d0(def.length)} m, built ${d0(T.len)} m, ${T.drsZones.length} DRS zones`);

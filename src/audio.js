@@ -15,7 +15,13 @@ export function createAudio() {
   // GT: electric motor whine rising with speed. Formula: turbo V6, pitch follows rpm through the gears.
   function setVoice(v, speed, thr, vol, rpm) {
     const t = ctx.currentTime;
-    if (A.mode === "v6") {
+    if (A.mode === "v8") { // classic: a big, unsilenced V8, lower and rougher than the hybrid V6
+      const f = 55 + (rpm ?? Math.min(1, speed / 82)) * 190;
+      v.o1.type = "sawtooth"; v.o2.type = "square";
+      v.o1.frequency.setTargetAtTime(f, t, 0.015); v.o2.frequency.setTargetAtTime(f * 0.502, t, 0.015);
+      v.f.frequency.setTargetAtTime(420 + (rpm ?? 0.5) * 2100 * (0.4 + 0.6 * thr), t, 0.03);
+      v.g.gain.setTargetAtTime(vol * 1.3 * (0.35 + 0.65 * thr), t, 0.03);
+    } else if (A.mode === "v6") {
       const f = 95 + (rpm ?? Math.min(1, speed / 92)) * 330;
       v.o1.type = "sawtooth"; v.o2.type = "square";
       v.o1.frequency.setTargetAtTime(f, t, 0.012); v.o2.frequency.setTargetAtTime(f * 0.5, t, 0.012);

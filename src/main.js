@@ -159,14 +159,18 @@ function setPaused(p) {
   hostHold();
 }
 // ---------- pausing: when the host is away (tab hidden) or in the pause menu, the whole session stops ----------
-function hostAway() { return !!(S.paused || document.hidden); }
+// a quick alt-tab must not stop everyone: the tab has to stay hidden for 4 s (the race keeps simulating meanwhile, see the ticker)
+let hiddenAt = 0;
+function hostAway() { if (S.paused) return true; if (!document.hidden) { hiddenAt = 0; return false; } hiddenAt ||= performance.now(); return performance.now() - hiddenAt > 4000; }
+const holdMsg = (race) => ({ t: "hold", on: race.held, at: race.held ? race.heldAt : race.resumedAt || 0, n: race.go.n, q: race.holdQ || 0 });
 function hostHold() {
   const race = S.race; if (!race || race.demo || !isHost() || race.ended) return;
   const want = hostAway();
   if (want === race.held) return;
   const at = Math.round(netNow());
+  race.holdQ = (race.holdQ || 0) + 1; // numbered: relays can deliver "resume" before "pause"; the newer one wins
   applyHold(want, at);
-  S.room?.net?.send({ t: "hold", on: want, at, n: race.go.n }, { reliable: true });
+  S.room?.net?.send(holdMsg(race), { reliable: true });
 }
 function applyHold(on, at) {
   const race = S.race; if (!race) return;
@@ -174,7 +178,7 @@ function applyHold(on, at) {
   if (on === race.held) return;
   if (on) { race.held = true; race.heldAt = at; }
   else {
-    race.held = false; race.t0 += Math.max(0, at - race.heldAt); // the race clock skips the paused time
+    race.held = false; race.resumedAt = at; race.t0 += Math.max(0, at - race.heldAt); // the race clock skips the paused time
     for (const e of race.cars) { e.snaps.length = 0; e.lastSeen = performance.now(); }
     acc = 0;
   }
@@ -183,7 +187,8 @@ function applyHold(on, at) {
 document.addEventListener("visibilitychange", hostHold);
 setInterval(() => { // keep reminding everyone while held; if the host vanishes mid-pause, carry on without them
   const race = S.race; if (!race || race.demo) return;
-  if (isHost()) { if (race.held) S.room?.net?.send({ t: "hold", on: true, at: race.heldAt, n: race.go.n }, { reliable: true }); else hostHold(); }
+  // the host states the pause state every 2 s, held or not: a player who missed or mis-ordered a message is right again within 2 s
+  if (isHost()) { hostHold(); if (S.room?.net && !race.ended) S.room.net.send(holdMsg(race), { reliable: true }); }
   else if (race.held && performance.now() - (race.holdSeen || 0) > 8000) applyHold(false, Math.round(netNow()));
 }, 2000);
 const gfxLabel = () => ({ auto: "auto", 2: "high (effects)", 1: "standard", 0: "low" })[prefs.gfx];
@@ -297,7 +302,7 @@ function renderLobby() {
   $("#netstat").textContent = R.solo ? "" : !n.relaysUp ? "Connecting to the matchmaking relays…" : mem.length === 1 ? "Waiting for drivers. Send them the code or the link." : `${mem.length} drivers connected`;
   const tk = $("#tracks");
   if (!tk.childElementCount) {
-    tk.innerHTML = TRACKS.map((d, i) => `<button class="trk" data-i="${i}"><canvas width="240" height="150"></canvas><b>${d.name}</b><small>${d.country} \u00b7 ${(d.length / 1000).toFixed(3)} km${d.street ? " \u00b7 street" : ""}${d.mood === "night" ? " \u00b7 night" : ""}</small></button>`).join("");
+    tk.innerHTML = TRACKS.map((d, i) => `<button class="trk" data-i="${i}" title="${esc(d.name)}"><canvas width="240" height="150"></canvas><b>${d.short || d.name}</b><small>${d.country} \u00b7 ${(d.length / 1000).toFixed(3)} km${d.street ? " \u00b7 street" : ""}${d.mood === "night" ? " \u00b7 night" : ""}</small></button>`).join("");
     tk.insertAdjacentHTML("afterend", `<p id="trkblurb"></p>`);
     tk.querySelectorAll("canvas").forEach((cv, i) => drawMini(cv, outlineOf(TRACKS[i])));
     tk.onclick = (e) => { const b = e.target.closest(".trk"); if (b) setCfg("track", +b.dataset.i); };
@@ -306,7 +311,7 @@ function renderLobby() {
   const pb = store.get(`pb3:${TRACKS[R.cfg.track].id}:${R.cfg.cls}`, null);
   $("#trkblurb").textContent = `${TRACKS[R.cfg.track].full}. ${TRACKS[R.cfg.track].blurb}` + (pb ? ` Your best lap: ${fmt(pb.t)}.` : "");
   const pick = (k) => (v) => setCfg(k, v);
-  seg($("#o-cls"), [["gt", "Electric GT"], ["f1", "Formula"]], R.cfg.cls, pick("cls"));
+  seg($("#o-cls"), [["gt", "Electric GT"], ["f1", "Formula"], ["classic", "Classic"]], R.cfg.cls, pick("cls"));
   seg($("#o-laps"), [[1, "1 lap"], [3, "3"], [5, "5"], [10, "10"]], R.cfg.laps, pick("laps"));
   seg($("#o-bots"), [0, 3, 5, 7, 9].map((b) => [b, String(b)]), R.cfg.bots, pick("bots"));
   seg($("#o-diff"), DIFFS.map((d, i) => [i, d.name]), R.cfg.diff, pick("diff"));
@@ -361,7 +366,7 @@ function onMsg(from, m) {
     case "em": if (race) { world.emote(m.id, EMOTES[m.e] || ""); audio.fx("emote"); } break;
     case "tk": { const e = race?.byId.get(m.id); if (e) { e.kind = "b"; e.skill = 0.9; feed(`${esc(e.code)}: autopilot takes over`); } break; }
     case "res": if (from === hostId() && race && !race.demo) showResults(m); break;
-    case "hold": if (from === hostId() && race && !race.demo && race.go.n === m.n) applyHold(m.on, m.at); break;
+    case "hold": if (from === hostId() && race && !race.demo && race.go.n === m.n) { const q = m.q ?? 0; if (q < (race.holdQ || 0)) break; race.holdQ = q; if (m.on || race.held) applyHold(m.on, m.at); else race.holdSeen = performance.now(); } break;
   }
 }
 
@@ -388,8 +393,9 @@ function startRace(go, demo) {
   const T = track(go.cfg.track), cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
   T.v = speedProfile(T, cls);
   if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; } else world.resetRace();
-  audio.mode = cls.id === "f1" ? "v6" : "ev";
-  const race = S.race = { go, demo: !!demo, T, cls, quali, laps: quali ? QUALI_LAPS : go.cfg.laps, dmg: go.cfg.rules === "gp" ? 2 : 1, gp: go.cfg.rules === "gp" && !demo, t0: go.at + 5000 + go.hold, cars: [], byId: new Map(), mine: null, state: "pre", order: [], firstFin: null, lightsN: -1, sendT: 0, hudT: 0, monT: 0, bestLap: null, bestBy: null, spect: false, yellowT: [-99, -99, -99], drsOn: !(go.cfg.rules === "gp") || quali, rcQ: [], outHits: [], held: false, heldAt: 0 };
+  audio.mode = cls.id === "f1" ? "v6" : cls.id === "classic" ? "v8" : "ev";
+  $("#hud").classList.toggle("classic", !!cls.noErs); // no battery, no active aero: hide those instruments
+  const race = S.race = { go, demo: !!demo, T, cls, quali, laps: quali ? QUALI_LAPS : go.cfg.laps, dmg: go.cfg.rules === "gp" ? 2 : 1, gp: go.cfg.rules === "gp" && !demo, t0: go.at + 5000 + go.hold, cars: [], byId: new Map(), mine: null, state: "pre", order: [], firstFin: null, lightsN: -1, sendT: 0, hudT: 0, monT: 0, bestLap: null, bestBy: null, spect: false, yellowT: [-99, -99, -99], drsOn: !cls.noErs && (!(go.cfg.rules === "gp") || quali), rcQ: [], outHits: [], held: false, heldAt: 0 };
   if (quali) race.t0 = go.at + 3500;
   go.grid.forEach((g, i) => {
     const c = makeCar(g.id, cls), pose = quali ? gridPose(T, i * 3) : gridPose(T, i); placeCar(c, pose); c.total = pose.i - T.n; c.dents = [];
@@ -527,7 +533,7 @@ function simStep(race, now) {
   if (green && race.state === "pre") { race.state = "run"; }
   const all = race.cars, phys = all.map((e) => e.c), host = isHost(), dmg = race.dmg;
   const leaderLaps = Math.max(0, ...all.map((e) => e.lapsDone));
-  if (race.gp && !race.drsOn && leaderLaps >= 2) { race.drsOn = true; raceControl("OVERTAKE MODE ENABLED", true, true); explain("drs"); }
+  if (race.gp && !race.drsOn && !race.cls.noErs && leaderLaps >= 2) { race.drsOn = true; raceControl("OVERTAKE MODE ENABLED", true, true); explain("drs"); }
   for (const e of all) {
     const c = e.c;
     if (e.hide) continue;
@@ -707,8 +713,9 @@ function drawMapBase(T) {
 const hudCache = {};
 function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
 function setClass(id, cls, on) { const k = id + "." + cls; if (hudCache[k] !== on) { hudCache[k] = on; $(id).classList.toggle(cls, on); } }
-const gearOf = (cls, v) => cls.id === "f1" ? clamp(Math.floor(Math.pow(Math.max(v, 0) / cls.vtop, 0.85) * 8) + 1, 1, 8) : 0;
-function rpmOf(cls, v) { if (cls.id !== "f1") return clamp(v / cls.vtop, 0, 1); const g = gearOf(cls, v), lo = Math.pow((g - 1) / 8, 1 / 0.85) * cls.vtop, hi = Math.pow(g / 8, 1 / 0.85) * cls.vtop; return clamp(0.45 + 0.55 * (v - lo) / (hi - lo), 0.2, 1); }
+const GEARS = { f1: 8, classic: 5 };
+const gearOf = (cls, v) => GEARS[cls.id] ? clamp(Math.floor(Math.pow(Math.max(v, 0) / cls.vtop, 0.85) * GEARS[cls.id]) + 1, 1, GEARS[cls.id]) : 0;
+function rpmOf(cls, v) { const G = GEARS[cls.id]; if (!G) return clamp(v / cls.vtop, 0, 1); const g = gearOf(cls, v), lo = Math.pow((g - 1) / G, 1 / 0.85) * cls.vtop, hi = Math.pow(g / G, 1 / 0.85) * cls.vtop; return clamp(0.45 + 0.55 * (v - lo) / (hi - lo), 0.2, 1); }
 const dmgColor = (d) => (d < 0.3 ? "#2fe37a" : d < 0.65 ? "#ffb020" : "#ff3b3b");
 
 function classify(race) {
@@ -748,9 +755,9 @@ function updateHud(race, dt, now) {
   const view = race.focus; if (!view) return;
   const c = view.c, kmh = Math.round(c.speed * 3.6);
   setText("#speed", String(kmh));
-  const g = gearOf(cls, c.speed); setText("#gear", cls.id === "f1" ? String(g) : c.boosting ? "B" : "D");
+  const g = gearOf(cls, c.speed); setText("#gear", GEARS[cls.id] ? String(g) : c.boosting ? "B" : "D");
   if (view === race.mine && g > (race.lastGear || 0) && race.lastGear) audio.fx("shift"); race.lastGear = g;
-  const rp = Math.round((cls.id === "f1" ? rpmOf(cls, c.speed) : c.thr) * 15); if (hudCache.rpm !== rp) { hudCache.rpm = rp; [...$("#rpm").children].forEach((el, i) => el.classList.toggle("on", i < rp)); }
+  const rp = Math.round((GEARS[cls.id] ? rpmOf(cls, c.speed) : c.thr) * 15); if (hudCache.rpm !== rp) { hudCache.rpm = rp; [...$("#rpm").children].forEach((el, i) => el.classList.toggle("on", i < rp)); }
   setClass("#b-drs", "on", !!c.aeroOpen); setClass("#b-ovt", "on", !!view.drsReady || !!c.overtake);
   if (view === race.mine && prefs.hud === "full") {
     $("#wheelg").setAttribute("transform", `rotate(${(c.steer * 100).toFixed(1)})`); setText("#wheelspd", String(kmh));
@@ -941,12 +948,18 @@ $("#res-next").onclick = () => {
 
 // ---------- main loop ----------
 let last = performance.now(), acc = 0;
-function frame(t) {
-  requestAnimationFrame(frame);
+function frame(t) { requestAnimationFrame(frame); tick(t, true); }
+// a hidden tab gets no animation frames and throttled timers, but a worker's messages still arrive: the race (host's AI
+// cars, network, timing) keeps running without drawing, so other players never see the host's cars freeze
+try {
+  const wk = new Worker(URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 33)"], { type: "text/javascript" })));
+  wk.onmessage = () => { if (document.hidden && S.race && !S.race.demo) { tick(performance.now(), false); hostHold(); } };
+} catch {}
+function tick(t, draw) {
   const dt = Math.min(0.25, (t - last) / 1000); last = t;
   const race = S.race;
   if (world.lineup) placeTags();
-  if (!race) { world.updateCamera(null, 0, dt); world.render(dt); return; }
+  if (!race) { if (draw) { world.updateCamera(null, 0, dt); world.render(dt); } return; }
   const frozen = race.held && !race.demo;
   const now = frozen ? race.heldAt : netNow();
   if (!frozen) {
@@ -1001,7 +1014,7 @@ function frame(t) {
     } else race.outHits.length = 0;
     hostFinish(race, raceT);
   } else audio.frame(null, null);
-  world.render(dt);
+  if (draw) world.render(dt);
 }
 world.onDetach = (id) => { if (S.race?.mine?.id === id) audio.fx("part"); };
 

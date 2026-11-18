@@ -10,6 +10,9 @@ export const CAR_HALF_W = 0.95;     // half track width of the car, for track li
 export const CLASSES = {
   gt: { id: "gt", name: "Electric GT", g0: 14.5, gk: 0.0012, power: 345, traction: 13, drag: 0.0005, brake: 16, regen: 2.2, vtop: 89, margin: 0.84 },
   f1: { id: "f1", name: "Formula", g0: 18, gk: 0.0046, power: 930, traction: 12, drag: 0.00112, brake: 52, regen: 0.8, vtop: 94, margin: 0.88 },
+  // late-1960s Grand Prix car: ~410 hp in ~500 kg, no wings, narrow tyres, drum-era braking. No hybrid, no active aero.
+  // About 1.15 g everywhere (no downforce), so it slides: lateral grip builds slowly and the rear steps out under power.
+  classic: { id: "classic", name: "Classic", g0: 11.5, gk: 0.0003, power: 600, traction: 7.5, drag: 0.00105, brake: 11, regen: 0.3, vtop: 82, margin: 0.8, noErs: true, noAero: true, loose: 1 },
 };
 export const gripOf = (cls, v) => cls.g0 + cls.gk * v * v;
 
@@ -76,7 +79,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const safe = (inp.thr || 0) > 0.85 && (inp.brk || 0) < 0.05 && Math.abs(c.steer) < 0.3 && v > 25 && c.surf < 2 && !c.retired;
   if ((inp.brk || 0) > 0.1 || Math.abs(c.steer) > 0.45) c.aeroReq = false; // braking or turning closes the flap, as on the real cars
   const wasOpen = c.aeroOpen;
-  c.aeroOpen = safe && (c.aeroAuto ? straightAhead : c.aeroReq);
+  c.aeroOpen = !cls.noAero && safe && (c.aeroAuto ? straightAhead : c.aeroReq);
   c.aeroFlip = c.aeroOpen !== wasOpen;
   // the flap moves over ~0.3 s, so grip and drag blend instead of jumping (no twitch when it opens or closes)
   c.aeroK = clamp((c.aeroK || 0) + (c.aeroOpen ? dt : -2 * dt) / 0.3, 0, 1);
@@ -106,7 +109,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   // Overtake mode (within a second of the car ahead at the detection line) adds deployment, as in 2026.
   const E = [{ rec: 1.6, mult: 1.18, use: 0.17 }, { rec: 1, mult: 1.32, use: 0.25 }, { rec: 0.65, mult: 1.45, use: 0.33 }][c.ers ?? 1];
   c.overtake = !!inp.drsOk;
-  c.boosting = !!inp.boost && c.energy > 0.02 && thr > 0.3 && !c.retired;
+  c.boosting = !cls.noErs && !!inp.boost && c.energy > 0.02 && thr > 0.3 && !c.retired;
   if (c.boosting) c.energy = Math.max(0, c.energy - E.use * (c.overtake ? 0.7 : 1) * dt);
   else c.energy = Math.min(1, c.energy + (0.025 + 0.24 * brk * (v > 12 ? 1 : 0) + 0.08 * c.tow) * E.rec * dt);
   c.drs = c.aeroOpen; // the rear flap is open (drawn on the car, and sent to other players)
@@ -127,8 +130,9 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const yawCap = Math.min(3.0, 1.0 * Gnom * front * wt * (1 - 0.7 * lockF) * (1 + 0.35 * lockR) / Math.max(v, 5)) * clamp(v / 2.5, 0, 1);
   const slipAng = Math.atan2(vl, Math.abs(vf) + 2);
   let wTarget = clamp(c.steer + pull, -1, 1) * yawCap * dir;
-  wTarget += slipAng * 2.4 * clamp(v / 12, 0, 1) * clamp(c.sat * 4 - 3, 0, 1); // nose follows a slide back, near the limit only
+  wTarget += slipAng * (cls.loose ? 1.5 : 2.4) * clamp(v / 12, 0, 1) * clamp(c.sat * 4 - 3, 0, 1); // nose follows a slide back, near the limit only
   if (thr > 0.6 && v < 30 && c.surf !== 0) wTarget += c.steer * 0.3 * thr; // loose rear on kerbs and grass under power
+  if (cls.loose && thr > 0.45 && v > 6) wTarget += c.steer * dir * 0.55 * cls.loose * clamp((thr - 0.45) / 0.55, 0, 1) * clamp(1.15 - v / 50, 0, 1); // classic: power oversteer out of slow corners
   if (lockR > 0.05) wTarget += c.w * 0.5 * lockR + c.steer * 0.25 * lockR * dir; // locked rears: the tail keeps coming round
   c.w += (wTarget - c.w) * (1 - Math.exp(-(19 + 4 * hi) * dt)); // yaw inertia: crisp at every speed
   c.h += c.w * dt;
@@ -153,7 +157,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const fx2 = Math.cos(c.h), fz2 = Math.sin(c.h);
   const wvx = fx * vf + rx * vl, wvz = fz * vf + rz * vl;
   let nf = wvx * fx2 + wvz * fz2, nl = wvx * -fz2 + wvz * fx2;
-  const want = -nl * 12 * dt, sat = Math.abs(want) / Math.max(budget, 1e-6);
+  const want = -nl * (cls.loose ? 7 : 12) * dt, sat = Math.abs(want) / Math.max(budget, 1e-6);
   nl += clamp(want, -budget, budget); c.sat = sat;
   c.slip = Math.min(2, Math.max(Math.max(0, sat - 0.92) * 1.6, 0.9 * Math.max(c.lockF, c.lockR))); // smoke, marks and tyre squeal
   if (sat > 1) nf -= Math.sign(nf) * Math.min(Math.abs(nf), Math.abs(nl) * 0.8 * dt); // sliding scrubs speed
@@ -164,7 +168,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   // tyre temperatures: heat from cornering load (outside tyres most), braking (by bias), traction and sliding;
   // cooled by the air. Grip falls off outside the 85-110 C window.
   { const ay = c.w * c.speed, u = Math.min(1.5, Math.abs(ay) / Math.max(G, 1)), right = ay > 0, b = brakeA / Math.max(G, 1), a = Math.min(1, acc / Math.max(cls.traction, 1)), sl = c.slip;
-    const drv = cls.id === "f1" ? [0, 0, 1, 1] : [0.8, 0.8, 1, 1];
+    const drv = cls.id === "gt" ? [0.8, 0.8, 1, 1] : [0, 0, 1, 1];
     for (let k = 0; k < 4; k++) {
       const outer = (k % 2 === 0) === right ? 1.35 : 0.65, fr = k < 2;
       // heat ~ energy dissipated in the contact patch: lateral load x speed, braking load x speed, wheelspin, sliding

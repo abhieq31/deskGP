@@ -6,15 +6,14 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 
 ## What is in it
 
-- **Six real Grand Prix circuits**, built from their actual centrelines at full scale: Monza, Silverstone, Spa-Francorchamps, Monaco, Marina Bay (at night) and Interlagos. Real lengths (within 1%), real start/finish lines, race direction, DRS on the longest straights.
-- **Your record is the opponent**: every lap shows the gap to your all-time best on that circuit and car; a lap with four wheels off simply doesn't count as a record. Sector times go purple, green or yellow.
-- **Two car classes**: Electric GT (instant torque, regen when you lift) and Formula (more downforce, a V6 note, eight gears, DRS flap).
-- **Grand Prix format, without the paperwork**: five red lights with a random hold and your reaction time, DRS in the zones when you are within one second of the car ahead, the chequered flag (once the leader finishes, everyone finishes at their next crossing), and points 25-18-15-12-10-8-6-4-2-1. No penalties, no flags to obey.
-- **Damage you can see**: dents where you hit, and splitters, mirrors, wings and endplates that break off and stay on the track.
-- **Racing line** (per driver): turns yellow and red where you need to lift and brake. Corners only, full lap, or off.
-- **Pauses when the host is away**: if the host switches tab or opens the pause menu, the race stops for everyone and picks up where it left off.
-- **Multiplayer for up to 10 cars** by room code or link; AI drivers fill the grid.
-- **Quick-hide (B)**: a plain spreadsheet covers the screen and the autopilot keeps your car in the race.
+- **Five real Grand Prix circuits** from their actual centrelines at full scale, each in its own setting: Monza (royal park), Silverstone (open airfield), Spa-Francorchamps (Ardennes forest and hills), Monaco (harbour, yachts, Riviera streets) and Interlagos (inside the São Paulo skyline).
+- **Car physics from first principles**: each axle's tyres make grip from their own slip angle and load; weight moves forward under braking and back under power; downforce adds grip with speed. Understeer, lift-off rotation and wide exits come from the physics, not a script. Real numbers: the Electric GT does 0-100 km/h in 2.1 s and corners at about 1.3 g; the Formula car pulls 4 g at 290 km/h and stops from 200 km/h in 60 m.
+- **Skill that shows**: brake in a straight line, turn in, feed the throttle as you unwind. Every lap shows the gap to your all-time best; cut laps do not count as records; sector times go purple, green or yellow. Skill points (places gained, overtakes, clean laps, starts, records) build your career.
+- **Race like the broadcasts**: five-light start, live timing tower with real gaps, an interval board after each sector, DRS on the straights, chequered flag, F1 points, and a classification screen with your race summary.
+- **Two rule sets**: *Casual* (start lights, DRS, chequered flag, points; nothing to obey) and *Grand Prix* (qualifying, track limits, penalties, yellow and blue flags, DRS from lap 3, full damage), where race control explains each rule the first time it comes up.
+- **Challenge links**: share your best lap as a link; whoever opens it races your ghost with a live gap. No accounts.
+- **Multiplayer for up to 10 cars** by room code or link; AI drivers (named after famous drivers) fill the grid. The race pauses for everyone if the host steps away.
+- **Liveries** with (fictional) tech sponsors, dents and parts that break off.
 
 ## Controls
 
@@ -27,7 +26,7 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 | Mute | M |
 | Emotes | 1 to 4 |
 | Pause (pauses everyone if you are the host) / graphics | Esc |
-| Quick-hide | B |
+| Controls card | H |
 
 ## How multiplayer works
 
@@ -46,7 +45,7 @@ node test/feel.mjs  # how fast the car responds to a key press
 
 Source is in `src/`: `track.js` (circuits, racing line, speed profiles, barriers), `layout.js` (where scenery may go), `physics.js` (car model, damage), `ai.js` (AI drivers), `world.js` (three.js scene, cars, post-processing), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (sporting rules, lobby, HUD).
 
-Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits.
+Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Sponsor names on cars and boards are invented.
 
 ## Licence
 

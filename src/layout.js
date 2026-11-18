@@ -53,13 +53,25 @@ export function layout(T) {
       const w = 22 + R() * 12, d = 22 + R() * 12, jx = x + (R() - 0.5) * 16, jz = z + (R() - 0.5) * 16;
       if (!rectClear(T, jx, jz, 0, w / 2, d / 2, 2) || !free(jx, jz, Math.hypot(w, d) / 2)) continue;
       const near = distToTrack(T, jx, jz, 6) < 90, k = near ? (R() < 0.6 ? 0 : 1) : R() < 0.4 ? 2 : R() < 0.6 ? 1 : 0;
+      taken.push([jx, jz, Math.hypot(w, d) / 2]);
       out.buildings.push([jx, jz, w, d, [14 + R() * 12, 32 + R() * 28, 70 + R() * 70][k], k]);
     }
   } else {
-    for (let k = 0; k < 9000 && out.trees.length < 650; k++) {
-      const x = (R() - 0.5) * (T.box.hx * 2 + 1400), z = (R() - 0.5) * (T.box.hz * 2 + 1200);
-      if (distToTrack(T, x, z, 6) > clearance(T) + 22 && free(x, z, 8)) out.trees.push([x, z, 0.8 + R() * 1.1, R()]);
+    // forest circuits are lined with trees right behind the fences; half the trees stay within 150 m of the track
+    const want = T.def.trees ?? 500;
+    for (let k = 0; k < want * 14 && out.trees.length < want; k++) {
+      const near = k % 2 === 0, i = Math.floor(R() * T.n), s = R() < 0.5 ? -1 : 1, d = clearance(T) + 6 + R() * (near ? 140 : 700);
+      const x = near ? T.x[i] + T.nx[i] * s * d : (R() - 0.5) * (T.box.hx * 2 + 1400), z = near ? T.z[i] + T.nz[i] * s * d : (R() - 0.5) * (T.box.hz * 2 + 1200);
+      if (distToTrack(T, x, z, 6) > clearance(T) + 6 && free(x, z, 6)) out.trees.push([x, z, 0.8 + R() * 1.1, R() < (T.def.pine ?? 0.33) ? R() * 0.33 : 0.34 + R() * 0.66]);
     }
+    // a city skyline around the circuit (Interlagos sits inside São Paulo)
+    if (T.def.skyline) for (let k = 0; k < 2600 && out.buildings.length < 260; k++) {
+      const a = R() * Math.PI * 2, rr = Math.max(T.box.hx, T.box.hz) + 250 + R() * 900, x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+      if (distToTrack(T, x, z, 6) > 260 && free(x, z, 30)) { const w = 22 + R() * 20; out.buildings.push([x, z, w, w * (0.7 + R() * 0.6), 30 + R() * 110, 2]); }
+    }
+  }
+  if (T.def.yachts) for (let k = 0; k < 400 && (out.yachts ??= []).length < 40; k++) {
+    const x = (R() - 0.5) * T.box.hx * 2, z = T.box.hz + 110 + R() * 260; out.yachts.push([x, z, 14 + R() * 30, R() * Math.PI]);
   }
   return out;
 }

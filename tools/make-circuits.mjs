@@ -2,12 +2,11 @@
 // race direction, starting at the start/finish line. Run: node tools/make-circuits.mjs
 import fs from "node:fs";
 const PICK = [
-  { src: "it-1922", id: "monza", name: "Monza", full: "Autodromo Nazionale Monza", country: "Italy", mood: "day", width: 14, drs: 2, blurb: "The Temple of Speed. Long straights, slipstream, and three chicanes where the race is won or lost on the brakes." },
-  { src: "gb-1948", id: "silverstone", name: "Silverstone", full: "Silverstone Circuit", country: "Great Britain", mood: "day", width: 15, drs: 2, blurb: "Fast and flowing. Commit through Maggotts and Becketts and the lap comes to you." },
-  { src: "be-1925", id: "spa", name: "Spa-Francorchamps", full: "Circuit de Spa-Francorchamps", country: "Belgium", mood: "sunset", width: 14, drs: 2, blurb: "Seven kilometres through the forest: La Source, Eau Rouge, the Kemmel straight and Blanchimont flat out." },
-  { src: "mc-1929", id: "monaco", name: "Monaco", full: "Circuit de Monaco", country: "Monaco", mood: "day", width: 10, street: true, wall: 2.6, drs: 1, blurb: "Narrow streets, no run-off, walls everywhere. The slowest lap and the hardest one to put together." },
-  { src: "sg-2008", id: "marinabay", name: "Marina Bay", full: "Marina Bay Street Circuit", country: "Singapore", mood: "night", width: 12, street: true, wall: 3.4, drs: 3, blurb: "Under the floodlights, between the towers. Long, bumpy and relentless: a test of concentration." },
-  { src: "br-1940", id: "interlagos", name: "Interlagos", full: "Autódromo José Carlos Pace", country: "Brazil", mood: "day", width: 14, drs: 2, blurb: "Anticlockwise and short. The Senna S, a long uphill drag to the line, and always a fight." },
+  { src: "it-1922", id: "monza", name: "Monza", full: "Autodromo Nazionale Monza", country: "Italy", mood: "day", width: 14, drs: 2, trees: 1300, pine: 0.15, blurb: "The Temple of Speed. Long straights, slipstream, and three chicanes where the race is won or lost on the brakes." },
+  { src: "gb-1948", id: "silverstone", name: "Silverstone", full: "Silverstone Circuit", country: "Great Britain", mood: "day", width: 15, drs: 2, trees: 240, pine: 0.2, blurb: "Fast and flowing. Commit through Maggotts and Becketts and the lap comes to you." },
+  { src: "be-1925", id: "spa", name: "Spa-Francorchamps", full: "Circuit de Spa-Francorchamps", country: "Belgium", mood: "sunset", width: 14, drs: 2, trees: 1700, pine: 0.85, blurb: "Seven kilometres through the forest: La Source, Eau Rouge, the Kemmel straight and Blanchimont flat out." },
+  { src: "mc-1929", id: "monaco", name: "Monaco", full: "Circuit de Monaco", country: "Monaco", mood: "day", width: 10, street: true, wall: 2.6, drs: 1, yachts: true, blurb: "Narrow streets, no run-off, walls everywhere. The slowest lap and the hardest one to put together." },
+  { src: "br-1940", id: "interlagos", name: "Interlagos", full: "Autódromo José Carlos Pace", country: "Brazil", mood: "day", width: 14, drs: 2, trees: 420, pine: 0.05, skyline: true, blurb: "Anticlockwise and short. The Senna S, a long uphill drag to the line, and always a fight." },
 ];
 const d = JSON.parse(fs.readFileSync("tools/f1-circuits.geojson", "utf8"));
 const out = PICK.map((p) => {

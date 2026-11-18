@@ -21,7 +21,7 @@ await p.screenshot({ path: out + "/4-race.png" });
 await p.keyboard.down("Space"); await p.waitForTimeout(3000); await p.keyboard.down("ArrowRight"); await p.waitForTimeout(900); await p.keyboard.up("ArrowRight");
 await p.screenshot({ path: out + "/5-race.png" });
 await p.keyboard.press("KeyC"); await p.waitForTimeout(1500); await p.screenshot({ path: out + "/6-deskcam.png" });
-await p.keyboard.press("KeyB"); await p.waitForTimeout(6000); await p.screenshot({ path: out + "/7-boss.png" }); await p.keyboard.press("KeyB");
+
 await p.keyboard.press("KeyC"); await p.keyboard.press("KeyC"); await p.waitForTimeout(1500); await p.screenshot({ path: out + "/8-drone.png" });
 const st = await p.evaluate(() => { const r = window.__deskgp.S.race; return { state: r.state, pos: r.mine.pos, speed: r.mine.c.speed, total: r.mine.c.total, quality: window.__deskgp.world.quality, pen: r.mine.pen, tl: r.mine.tlN, dmg: r.mine.c.dmg }; });
 console.log(JSON.stringify(st));

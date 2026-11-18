@@ -29,7 +29,9 @@ const MOODS = {
   sunset: { top: "#232a63", mid: "#ef855a", low: "#ffd28c", hill: "#5a3d55", fog: 0xe3a37a, fogD: 0.0007, sun: 0xffa055, sunI: 3.4, sunDir: [0.75, 0.3, -0.4], hemiS: 0xb9a0e0, hemiG: 0x6a4a34, hemiI: 0.8, exp: 1.0, grass: "#6a8238", grass2: "#5e7631", hillCol: 0x8a7a45 },
   night: { top: "#02040a", mid: "#0a1226", low: "#1c2746", hill: "#0a0f1c", fog: 0x0b1222, fogD: 0.0009, sun: 0xdfe8ff, sunI: 1.6, sunDir: [-0.2, 0.95, 0.25], hemiS: 0x7086c0, hemiG: 0x1c2018, hemiI: 0.8, exp: 1.1, grass: "#243f27", grass2: "#1f3822", hillCol: 0x1e3322 },
 };
-const BRANDS = ["VOLTA", "APEX", "NIMBUS", "HALO", "DESKGP", "KINETIK", "AURORA", "ZENITH", "PULSE", "NORTHWIND", "OCTANE", "RAPIDE"];
+// Fictional tech sponsors (trackside and on the cars)
+export const SPONSORS = ["NEXORA", "QUANTIX", "CLOUDWAVE", "VOLTEDGE", "SYNAPSE AI", "HELIOS CHIPS", "ORBITAL", "PIXELFORGE", "DATASTREAM", "KERNEL", "LUMEN", "STACKBYTE"];
+const BRANDS = SPONSORS;
 
 // ---------- post-processing: speed blur, chromatic kick under boost, grade, vignette ----------
 const FinalShader = {
@@ -321,7 +323,7 @@ export function createWorld(canvas) {
     }
     for (const st of L.stands) { const gs = grandstand(); gs.position.set(st.x, 0, st.z); gs.rotation.y = st.rot; G.add(gs); keepOut.push([st.x, st.z, 34]); }
     if (L.pit) keepOut.push([L.pit.x, L.pit.z, 60]);
-    const mt = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new V3(), col = new THREE.Color();
+    const mt = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new V3(), col = new THREE.Color(); // shared scratch
     if (street) {
       // city blocks: towers with lit windows, a few rooftop signs, the harbour on one side
       const winTex = (seed) => canvasTex(128, 256, (g, w, h) => {
@@ -341,7 +343,13 @@ export function createWorld(canvas) {
         list.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h / 2, z), q.identity(), sc.set(w, h, d)); im.setMatrixAt(i, mt); });
         im.castShadow = false; im.receiveShadow = true; G.add(im);
       });
-      const signs = cells[2].slice(0, 14);
+      // Monaco: yachts moored in the harbour
+      if (L.yachts?.length) {
+        const hull = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ color: 0xf6f7f8, roughness: 0.3, metalness: 0.1 }), L.yachts.length), deck = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ color: 0x1d2a38, roughness: 0.2, metalness: 0.6 }), L.yachts.length);
+        L.yachts.forEach(([x, z, len, rot], k) => { const e = new THREE.Euler(0, rot, 0); mt.compose(new V3(x, 1.2, z), q.setFromEuler(e), sc.set(len, 2.6, len * 0.24)); hull.setMatrixAt(k, mt); mt.compose(new V3(x, 3.2, z), q, sc.set(len * 0.5, 1.6, len * 0.18)); deck.setMatrixAt(k, mt); });
+        G.add(hull, deck);
+      }
+      const signs = night ? cells[2].slice(0, 14) : [];
       signs.forEach(([x, z, w, d, h], i) => { const t = canvasTex(256, 64, (g, cw, ch) => { g.fillStyle = "#000"; g.fillRect(0, 0, cw, ch); g.fillStyle = ["#ff2d55", "#00e5ff", "#ffd60a", "#7cff4f"][i % 4]; g.font = "italic 900 40px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(BRANDS[i % BRANDS.length], cw / 2, ch / 2); }); const s = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.9, w * 0.22), new THREE.MeshBasicMaterial({ map: t, toneMapped: false, side: THREE.DoubleSide })); s.position.set(x, h + w * 0.14, z); s.rotation.y = Math.atan2(-x, -z); G.add(s); });
       const water = new THREE.Mesh(new THREE.PlaneGeometry(8000, 4000), std({ color: night ? 0x0a1628 : 0x1d5f86, roughness: 0.08, metalness: 0.8, envMapIntensity: 1.2 })); water.rotation.x = -Math.PI / 2; water.position.set(0, -0.15, T.box.hz + 80 + 2000); G.add(water);
       // street lights along the circuit
@@ -350,6 +358,13 @@ export function createWorld(canvas) {
       lp.forEach(([i, s], k) => { const o = wallOff(T, s)(i) + s * 1.6, x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o; mt.makeTranslation(x, 4.5, z); pole.setMatrixAt(k, mt); mt.makeTranslation(x - T.nx[i] * s * 0.7, 9, z - T.nz[i] * s * 0.7); lamp.setMatrixAt(k, mt); });
       G.add(pole, lamp);
     } else {
+      // a distant city skyline (Interlagos): glass and concrete towers
+      if (L.buildings.length) {
+        const glass = canvasTex(128, 256, (g, w, h) => { g.fillStyle = "#8fa3b8"; g.fillRect(0, 0, w, h); for (let y = 4; y < h; y += 9) { g.fillStyle = `rgba(30,45,60,${rnd(0.25, 0.5)})`; g.fillRect(0, y, w, 5); } for (let x = 0; x < w; x += 16) { g.fillStyle = "rgba(220,226,232,.5)"; g.fillRect(x, 0, 2, h); } }, { repeat: [2, 8] });
+        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ map: glass, roughness: 0.35, metalness: 0.4, envMapIntensity: 0.8 }), L.buildings.length);
+        L.buildings.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h / 2 + (W.heightAt ? 0 : 0), z), q.identity(), sc.set(w, h, d)); im.setMatrixAt(i, mt); });
+        G.add(im);
+      }
       // rolling hills beyond the circuit
       const B = T.box, TW = B.hx * 2 + 2600, TD = B.hz * 2 + 2600, HH = HILLS[T.id] ?? 55;
       const tg = new THREE.PlaneGeometry(TW, TD, Math.round(TW / 26), Math.round(TD / 26)); tg.rotateX(-Math.PI / 2);
@@ -452,6 +467,14 @@ export function createWorld(canvas) {
   const stripeMat = std({ color: 0xffd000, roughness: 0.6 });
   const numTex = (n, color) => canvasTex(128, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "#fff"; g.beginPath(); g.arc(64, 64, 58, 0, 6.3); g.fill(); g.fillStyle = "#111"; g.font = "italic 900 64px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(n), 64, 68); });
 
+  const decalCache = new Map();
+  function decalTex(text, fg = "#ffffff", w = 512, h = 96, italic = true) {
+    const k = text + fg + w + h; if (decalCache.has(k)) return decalCache.get(k);
+    const t = canvasTex(w, h, (g) => { g.clearRect(0, 0, w, h); g.fillStyle = fg; g.font = `${italic ? "italic " : ""}900 ${Math.round(h * 0.72)}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2 + 3, w - 12); });
+    decalCache.set(k, t); return t;
+  }
+  const decalMat = (t) => new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 0.35, metalness: 0.2, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const ink = (hex) => { const c = new THREE.Color(hex); return c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.62 ? "#111318" : "#ffffff"; };
   function emoteTex(text) { return canvasTex(128, 128, (g) => { g.fillStyle = "rgba(255,255,255,.92)"; g.beginPath(); g.arc(64, 60, 48, 0, 6.3); g.fill(); g.font = "64px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, 64, 64); }); }
 
   W.addCar = function (id, color, clsId, opts = {}) {
@@ -476,7 +499,13 @@ export function createWorld(canvas) {
         for (const s of [-1, 1]) { const hl = add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.5), new THREE.MeshBasicMaterial({ color: 0xf4f8ff, toneMapped: false })), 2.53, 0.64, s * 0.58); hl.castShadow = false; hl.rotation.y = s * 0.25; }
         brake = add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 1.66), new THREE.MeshBasicMaterial({ color: 0x7a0000, toneMapped: false })), -2.57, 0.8, 0); brake.castShadow = false;
         add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 1.7), dark), -2.56, 0.55, 0);
-        for (const s of [-1, 1]) { const n = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.62), new THREE.MeshStandardMaterial({ map: numTex(opts.number ?? 1), transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 })); n.position.set(-0.15, 0.6, s * 1.075); n.rotation.y = s > 0 ? 0 : Math.PI; tilt.add(n); }
+        const sp = opts.sponsor || "DESKGP", spTex = decalTex(sp, ink(color));
+        for (const s of [-1, 1]) {
+          const n = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.62), new THREE.MeshStandardMaterial({ map: numTex(opts.number ?? 1), transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 })); n.position.set(-1.2, 0.66, s * 1.075); n.rotation.y = s > 0 ? 0 : Math.PI; tilt.add(n);
+          const d = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.4), decalMat(spTex)); d.position.set(0.25, 0.5, s * 1.082); d.rotation.y = s > 0 ? 0 : Math.PI; tilt.add(d);
+          const st = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 0.06), new THREE.MeshStandardMaterial({ color: opts.accent || 0x111318, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 })); st.position.set(0, 0.34, s * 1.08); st.rotation.y = s > 0 ? 0 : Math.PI; tilt.add(st);
+        }
+        const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.18), decalMat(decalTex(sp, "#ffffff"))); rw.position.set(-2.12, 1.06, 0); rw.rotation.set(0, -Math.PI / 2, 0); rw.rotateX(-0.75); tilt.add(rw);
       }
       flap = parts.spoiler = add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.04, 1.5), dark), -2.3, 1.08, 0);
     } else {
@@ -493,8 +522,11 @@ export function createWorld(canvas) {
         const fl = add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 1.9), paint), 2.6, 0.19, 0, fw); fl.rotation.z = 0.35;
         parts.epL = add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.03), paint), 2.7, 0.2, -0.98);
         parts.epR = add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.03), paint), 2.7, 0.2, 0.98);
+        const sp = opts.sponsor || "DESKGP", spTex = decalTex(sp, ink(color));
+        for (const s of [-1, 1]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.24), decalMat(spTex)); d.position.set(-0.35, 0.36, s * 0.715); d.rotation.y = s > 0 ? 0 : Math.PI; tilt.add(d); }
+        const nn = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), new THREE.MeshStandardMaterial({ map: numTex(opts.number ?? 1), transparent: true, polygonOffset: true, polygonOffsetFactor: -3 })); nn.position.set(1.7, 0.47, 0); nn.rotation.set(-Math.PI / 2 + 0.2, 0, Math.PI / 2); tilt.add(nn);
         const rw = new THREE.Group(); tilt.add(rw); parts.rwing = rw;
-        for (const s of [-1, 1]) add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.03), paint), -2.25, 0.82, s * 0.56, rw);
+        for (const s of [-1, 1]) { add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.03), paint), -2.25, 0.82, s * 0.56, rw); const e = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.12), decalMat(spTex)); e.position.set(-2.25, 0.9, s * 0.577); e.rotation.y = s > 0 ? 0 : Math.PI; rw.add(e); }
         add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 1.1), dark), -2.22, 0.96, 0, rw);
         add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), dark), -2.15, 0.7, 0, rw);
         flap = add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.035, 1.1), paint), -2.38, 1.08, 0, rw);

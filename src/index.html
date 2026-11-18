@@ -39,7 +39,17 @@
   <div id="mapwrap"><canvas id="map" width="440" height="300"></canvas></div>
   <div id="spect" hidden></div>
   <div id="hold" hidden>Paused</div>
-  <div id="keys">WASD / arrows drive &middot; Space ERS &middot; C camera &middot; R recover &middot; M mute &middot; 1-4 emotes &middot; Esc pause</div>
+  <div id="help" hidden>
+    <b>CONTROLS</b>
+    <div class="hk"><kbd>W</kbd><kbd>&uarr;</kbd><span>Throttle. Feed it in as you unwind the wheel.</span></div>
+    <div class="hk"><kbd>S</kbd><kbd>&darr;</kbd><span>Brake. Brake in a straight line, then turn in.</span></div>
+    <div class="hk"><kbd>A</kbd><kbd>D</kbd><span>Steer. Holding a key is the limit of grip; taps are small corrections.</span></div>
+    <div class="hk"><kbd>Space</kbd><span>ERS boost. Charges under braking and in a slipstream.</span></div>
+    <div class="hk"><kbd>C</kbd><span>Camera</span><kbd>R</kbd><span>Back on track</span><kbd>Esc</kbd><span>Pause</span><kbd>H</kbd><span>This card</span></div>
+    <i>DRS opens by itself on the straights when you are within a second of the car ahead. Press H to close.</i>
+  </div>
+  <div id="interval" hidden></div>
+  <div id="keys">H controls &middot; Esc pause</div>
   <div id="touch" hidden>
     <button id="t-left" aria-label="Steer left">&#9664;</button><button id="t-right" aria-label="Steer right">&#9654;</button>
     <button id="t-boost" aria-label="ERS boost">&#9889;</button><button id="t-brake" aria-label="Brake">BRAKE</button><button id="t-gas" aria-label="Accelerate">GO</button>
@@ -55,6 +65,7 @@
       <label class="field num"><span>No.</span><input id="num" maxlength="2" inputmode="numeric" autocomplete="off" placeholder="44"></label>
     </div>
     <div class="field"><span>Livery</span><div id="colors"></div></div>
+    <div id="chal" hidden><span></span><button id="chal-go" class="primary">Race this ghost</button></div>
     <div class="btns">
       <button id="solo" class="primary">Grand Prix vs AI</button>
       <button id="create">Create a room</button>
@@ -62,7 +73,7 @@
     <div class="joinrow"><input id="code" maxlength="9" autocomplete="off" spellcheck="false" placeholder="ROOM CODE"><button id="join">Join</button></div>
     <p id="menuerr" class="err"></p>
     <p class="career" id="career"></p>
-    <p class="fine">Share the room code: up to 10 cars, AI drivers fill the grid. Arrows or WASD to drive, Space for ERS. Gamepad and touch work too.</p>
+    <p class="fine">Share the room code: up to 10 cars, AI drivers fill the grid. Keyboard, gamepad or touch.</p>
   </div>
 </div>
 
@@ -86,6 +97,7 @@
         <div class="small">CIRCUIT</div>
         <div id="tracks"></div>
         <div class="opts">
+          <div class="opt"><span>Rules</span><div class="seg" id="o-rules"></div></div>
           <div class="opt"><span>Car</span><div class="seg" id="o-cls"></div></div>
           <div class="opt"><span>Race distance</span><div class="seg" id="o-laps"></div></div>
           <div class="opt"><span>AI drivers</span><div class="seg" id="o-bots"></div></div>
@@ -102,7 +114,7 @@
     <div class="small" id="res-sub">CLASSIFICATION</div>
     <h2 id="res-title">Race winner</h2>
     <div id="res-table"></div>
-    <div class="lobbyfoot"><span id="res-msg"></span><button id="res-next" class="primary">Continue</button></div>
+    <div class="lobbyfoot"><span id="res-msg"></span><span class="rbtns"><button id="res-chal" hidden>Copy challenge link</button><button id="res-next" class="primary">Continue</button></span></div>
   </div>
 </div>
 
@@ -119,11 +131,6 @@
   </div>
 </div>
 
-<div id="boss" hidden>
-  <div class="bossbar"><b>Book1 - Sheet1</b><span>File</span><span>Edit</span><span>View</span><span>Insert</span><span>Data</span><span>Help</span><em>Autopilot is driving your car. Press B to return.</em></div>
-  <div class="bossfx"><i>fx</i><span>=SUM(B2:B14)</span></div>
-  <div id="bossgrid"></div>
-</div>
 <!--JS-->
 </body>
 </html>

@@ -1,0 +1,35 @@
+name: Test
+
+# Every push and pull request: the build must be current, the circuits legal, the AI races clean, and the game must run
+# in a real browser within its speed and memory budgets. Move fast, with stable infrastructure.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: The committed deskgp.html is the current build
+        run: |
+          cp deskgp.html /tmp/committed.html
+          npm run build
+          cmp -s deskgp.html /tmp/committed.html || { echo "deskgp.html is out of date: run npm run build and commit it"; exit 1; }
+      - name: Circuits and AI races (fast subset; the full suite is npm test)
+        run: TRACKS=monza,suzuka,redbullring node test/sim.mjs
+      - name: Handling response
+        run: node test/feel.mjs
+      - name: Browser
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+          N=4 node test/smoke.mjs
+          node test/hidden.mjs
+          node test/perf.mjs | tee perf.txt
+          grep -q "within budget" perf.txt

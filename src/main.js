@@ -55,6 +55,33 @@ async function copyChallenge(btn, trackIdx, clsId) {
   setTimeout(() => (btn.textContent = "Copy challenge link"), 2500);
 }
 
+// ---------- growth: share, the daily challenge, rivalries ----------
+// share: the phone's share sheet where there is one (WhatsApp, iMessage...), otherwise the clipboard
+async function share(text, url, btn, done = "Copied \u2713") {
+  const label = btn?.textContent;
+  try { if (navigator.share && matchMedia("(pointer:coarse)").matches) { await navigator.share({ text, url }); return; } } catch (e) { if (e?.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(url ? `${text} ${url}` : text); if (btn) btn.textContent = done; } catch { prompt("Copy this", url ? `${text} ${url}` : text); }
+  if (btn) setTimeout(() => (btn.textContent = label), 2500);
+}
+// Daily challenge: one circuit and car per day, the same for everyone; a time trial, so it is fair. Best lap + streak.
+const DAY0 = Date.UTC(2026, 0, 1);
+function dailyId(t = Date.now()) { return Math.floor((t - new Date(t).getTimezoneOffset() * 60000 - DAY0) / 86400000) + 1; }
+function dailyOf(id) { let h = id * 2654435761 >>> 0; h ^= h >>> 15; const ti = h % TRACKS.length, cls = ["f1", "gt", "classic"][(h >>> 8) % 3]; return { id, track: ti, cls }; }
+function dailyState() { const d = dailyOf(dailyId()), best = store.get(`daily:${d.id}`, null); const streak = prefs.dailyLast >= d.id - 1 ? prefs.streak || 0 : 0; return { ...d, best, streak }; }
+function recordDaily(id, lt) {
+  const key = `daily:${id}`, old = store.get(key, null); if (old != null && old <= lt) return;
+  store.set(key, lt);
+  if (prefs.dailyLast !== id) { prefs.streak = prefs.dailyLast === id - 1 ? (prefs.streak || 0) + 1 : 1; prefs.dailyLast = id; savePrefs(); }
+}
+function dailyText(d) { return `DeskGP Daily #${d.id} \u00b7 ${TRACKS[d.track].name} \u00b7 ${CLASSES[d.cls].name}\n\u23f1 ${fmt(d.best)}${d.streak > 1 ? ` \u00b7 \ud83d\udd25 ${d.streak} days` : ""}\nBeat my lap:`; }
+// rivalries: your all-time record against each friend you race (kept on this device)
+function recordRivals(order) {
+  const myI = order.findIndex((o) => o.id === me.id); if (myI < 0) return [];
+  const h2h = prefs.h2h || (prefs.h2h = {}), out = [];
+  order.forEach((o, i) => { if (o.id === me.id || o.kind === "b" || !o.name) return; const r = h2h[o.name] || (h2h[o.name] = [0, 0]); r[i > myI ? 0 : 1]++; out.push([o.name, r[0], r[1], i > myI]); });
+  savePrefs(); return out;
+}
+
 // ---------- input ----------
 const keys = new Set(), touch = { l: 0, r: 0, gas: 0, brake: 0, boost: 0 };
 // the on-screen steering wheel: drag it (mouse or finger) to steer
@@ -218,8 +245,9 @@ function renderDriver() {
 function renderMenu() {
   $("#mark").innerHTML = logoMark(54);
   $("#name").value = prefs.name; $("#num").value = prefs.num || "";
-  $("#colors").innerHTML = TEAMS.map((t, i) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="--tc:${uiColor(t)}" aria-label="${esc(t.name)}">${miniCar(t)}<span class="tc">${crest(t, 18, i)}</span><span>${esc(t.name.replace(" F1 Team", ""))}</span></button>`).join("");
+  $("#colors").innerHTML = TEAMS.map((t, i) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="--tc:${uiColor(t)}" aria-label="${esc(t.name)}">${miniCar(t)}<span class="tc">${crest(t, 18, i)}</span><span>${esc(t.name.replace(" F1 Team", "").replace(" Racing", ""))}</span></button>`).join("");
   renderDriver();
+  { const d = dailyState(); setText("#daily-sub", `#${d.id} \u00b7 ${TRACKS[d.track].name} \u00b7 ${CLASSES[d.cls].name}`); setText("#daily-best", d.best != null ? `${fmt(d.best)}${d.streak > 1 ? ` \u00b7 \ud83d\udd25${d.streak}` : ""}` : d.streak > 0 ? `\ud83d\udd25${d.streak} \u00b7 today?` : "Go"); }
   const open = !prefs.name && !prefs.races; // first visit: show who you are; afterwards it is one tap away
   $("#driveredit").hidden = !open && !S.editOpen; $("#driver").setAttribute("aria-expanded", String(!$("#driveredit").hidden));
   $("#career").textContent = prefs.races ? `${rankOf(prefs.xp)} · ${prefs.xp} points · ${prefs.wins} win${prefs.wins === 1 ? "" : "s"} from ${prefs.races} starts` : "";
@@ -236,6 +264,8 @@ function renderMenu() {
   if (ch && ti >= 0) box.querySelector("span").textContent = `${ch.name} challenges you: ${fmt(ch.t)} at ${TRACKS[ti].name} (${CLASSES[ch.cls]?.name || "car"}). Beat that lap.`;
 }
 $("#driver").onclick = () => { S.editOpen = $("#driveredit").hidden; $("#driveredit").hidden = !S.editOpen; $("#driver").setAttribute("aria-expanded", String(S.editOpen)); audio.fx("click"); if (S.editOpen) $("#name").focus(); };
+// the daily: straight to the grid, no lobby (a time trial on today's circuit and car)
+$("#daily").onclick = () => { audio.init(); commitName(); enterRoom(null); const d = dailyState(); Object.assign(S.room.cfg, { track: d.track, cls: d.cls, bots: 0, laps: 3, rules: "casual", quali: false, dmg: 1, daily: d.id }); startSession("race"); };
 $("#havecode").onclick = () => { S.codeOpen = true; renderMenu(); $("#code").focus(); };
 $("#colors").onclick = (e) => { const t = e.target.closest("[data-t]")?.dataset.t; if (!t) return; prefs.team = me.team = t; me.color = teamOf(t).body; savePrefs(); renderMenu(); audio.fx("click"); };
 $("#name").oninput = (e) => { prefs.name = e.target.value.trim().slice(0, 18); savePrefs(); renderDriver(); };
@@ -291,7 +321,7 @@ function isHost() {
 function sendLob(to) { const R = S.room; if (!R?.net || !isHost()) return; R.gotLob = true; R.net.send({ t: "lob", cfg: R.cfg, points: R.points, raceN: R.raceN, phase: R.phase, go: R.phase === "race" ? R.go : null }, { reliable: true, to }); }
 setInterval(() => { const R = S.room; if (!R?.net) return; if (isHost()) sendLob(); else R.net.send({ t: "pi", a: performance.now() }, { to: hostId() }); if (S.screen === "lobby") renderLobby(); }, 2000);
 
-function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; if (k === "rules") { R.cfg.quali = v === "gp"; R.cfg.dmg = v === "gp" ? 2 : 1; } store.set("cfg5", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
+function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; delete R.cfg.daily; /* changed anything: no longer the daily */ if (k === "rules") { R.cfg.quali = v === "gp"; R.cfg.dmg = v === "gp" ? 2 : 1; } store.set("cfg5", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
 function seg(el, items, cur, onPick) {
   el.innerHTML = items.map(([v, label]) => `<button data-v='${JSON.stringify(v)}' class="${v === cur ? "on" : ""}">${label}</button>`).join("");
   el.onclick = (e) => { const v = e.target.closest("[data-v]")?.dataset.v; if (v != null) onPick(JSON.parse(v)); };
@@ -345,7 +375,7 @@ function renderLobby() {
   $("#start").textContent = R.cfg.quali ? "Start qualifying" : R.raceN ? "Next race" : "Lights out";
   $("#lobbymsg").textContent = host ? (mem.length + nb < 2 ? "Just you: a time trial." : R.cfg.rules === "gp" ? "Grand Prix rules: qualifying sets the grid, then the full rulebook. Race control explains each rule the first time it comes up." : "Grid order is drawn at random.") : R.phase === "race" ? "Session in progress. You will join the next one." : "Waiting for the host to start…";
 }
-$("#copy").onclick = async () => { const url = location.origin + location.pathname + "#" + S.room.code; try { await navigator.clipboard.writeText(url); $("#copy").textContent = "Link copied"; } catch { prompt("Copy this link", url); } setTimeout(() => ($("#copy").textContent = "Copy invite link"), 1600); };
+$("#copy").onclick = () => share(`Race me in DeskGP. Room ${formatRoomCode(S.room.code)}:`, location.origin + location.pathname + "#" + S.room.code, $("#copy"), "Link copied \u2713");
 $("#leave").onclick = leaveRoom;
 $("#trk-prev").onclick = () => { if (S.room) setCfg("track", (S.room.cfg.track + TRACKS.length - 1) % TRACKS.length); };
 $("#trk-next").onclick = () => { if (S.room) setCfg("track", (S.room.cfg.track + 1) % TRACKS.length); };
@@ -408,7 +438,12 @@ function demoNow(force) {
   const c0 = S.room ? S.room.cfg : defaultCfg(), ti = c0.track, cls = c0.cls || "gt";
   if (!force && S.race?.demo && S.race.T === built[ti] && S.race.cls.id === cls) return;
   const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], team: d[4], color: uiColor(teamOf(d[4])), num: d[3], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
-  startRace({ mode: "race", at: netNow() - 9000, hold: 0, cfg: { track: ti, laps: 9999, cls, dmg: 1 }, grid, n: -1 }, true);
+  const go = () => startRace({ mode: "race", at: netNow() - 9000, hold: 0, cfg: { track: ti, laps: 9999, cls, dmg: 1 }, grid, n: -1 }, true);
+  const T = track(ti), C = CLASSES[cls] || CLASSES.gt;
+  if (world.T === T && world.cls === C.id && world.sceneReady) return go();
+  // a new backdrop circuit: build it a slice per frame so menus and buttons never freeze, then start the demo cars
+  endRace(); T.v = speedProfile(T, C); world.cls = null;
+  world.setTrackAsync(T, T.v).then((ok) => { if (!ok || (S.race && !S.race.demo)) return; world.cls = C.id; go(); });
 }
 function owns(e) { return e.id === me.id || (e.kind === "b" && (S.race.demo || isHost())); }
 
@@ -416,7 +451,7 @@ function startRace(go, demo) {
   endRace();
   const T = track(go.cfg.track), cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
   T.v = speedProfile(T, cls);
-  if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; } else world.resetRace();
+  if (world.T !== T || world.cls !== cls.id || !world.sceneReady) { world.setTrack(T, T.v); world.cls = cls.id; } else world.resetRace(); // (a half-built backdrop is finished properly)
   audio.mode = cls.id === "f1" ? "v6" : cls.id === "classic" ? "v8" : "ev";
   $("#hud").classList.toggle("classic", !!cls.noErs); // no battery, no active aero: hide those instruments
   const race = S.race = { go, demo: !!demo, T, cls, quali, laps: quali ? QUALI_LAPS : go.cfg.laps, dmg: go.cfg.rules === "gp" ? 2 : 1, gp: go.cfg.rules === "gp" && !demo, t0: go.at + 5000 + go.hold, cars: [], byId: new Map(), mine: null, state: "pre", order: [], firstFin: null, lightsN: -1, sendT: 0, hudT: 0, monT: 0, bestLap: null, bestBy: null, spect: false, yellowT: [-99, -99, -99], drsOn: !cls.noErs && (!(go.cfg.rules === "gp") || quali), rcQ: [], outHits: [], held: false, heldAt: 0 };
@@ -528,6 +563,7 @@ function onLap(e, lt, rt, fin, remote, inv) {
       else { toast(`Lap ${fmt(lt)} \u00b7 +${(lt - old.t).toFixed(3)} to your best`, lt - old.t < 0.5 ? "g" : ""); audio.fx("lap"); }
     }
     if (ok && e.rec.length > 20 && (!old || lt < old.t)) { store.set(key, { t: lt, rec: e.rec, prof: e.prof }); race.pb = { t: lt, rec: e.rec, prof: e.prof }; if (old) race.newPB = true; }
+    if (ok && race.go.cfg.daily != null) recordDaily(race.go.cfg.daily, lt);
     e.rec = []; e.prof = []; e.recT = 0;
     if (!race.quali && !fin && e.lapsDone === race.laps - 1) setTimeout(() => big("FINAL LAP"), 300);
     if (!race.quali) setTimeout(() => lapRadio(race, e, fin), 1200);
@@ -921,15 +957,19 @@ function showResults(res, skipPodium) {
     skill = { items, total, gained, clean, laps: mine.lapsDone };
     prefs.races++; prefs.xp += total; if (myI === 0 && !mo.ret) prefs.wins++; savePrefs();
   }
+  const rivals = mo ? recordRivals(res.order) : [];
   $("#res-sub").textContent = `${res.track.toUpperCase()} \u00b7 ${res.laps || ""} LAP${res.laps === 1 ? "" : "S"} \u00b7 CLASSIFICATION`;
   $("#res-title").textContent = mo ? (mo.ret ? "RETIRED" : myI === 0 ? "RACE WINNER" : myI <= 2 ? `P${myI + 1} \u00b7 PODIUM` : myI <= 9 ? `P${myI + 1} \u00b7 POINTS` : `P${myI + 1}`) : `${lead.name} wins`;
   const fastest = res.order.find((o) => o.fast);
   $("#res-table").innerHTML = `<div class="rr hd"><b>POS</b><i></i><span>DRIVER</span><span class="t">TIME / GAP</span><span class="pn"></span><span class="bl">BEST LAP</span><span class="p">PTS</span></div>` + res.order.map((o, i) => `<div class="rr${o.id === me.id ? " me" : ""}" style="animation-delay:${i * 45}ms"><b>${o.ret ? "DNF" : i + 1}</b>${o.team ? crest(teamOf(o.team), 20, TEAMS.indexOf(teamOf(o.team))) : `<i style="background:${esc(o.color)}"></i>`}<span><em class="no">${o.num ?? ""}</em> ${esc(o.name)} <small>${esc(o.code)}${o.kind === "b" ? " \u00b7 AI" : ""}</small></span><span class="t">${o.ret ? "RETIRED" : o.laps < lead.laps ? `+${lead.laps - o.laps} LAP${lead.laps - o.laps > 1 ? "S" : ""}` : o.time == null ? "-" : i === 0 ? fmt(o.time) : "+" + (o.time - lead.time).toFixed(3)}</span><span class="pn">${o.pen ? `+${o.pen}s` : ""}</span><span class="bl${o.fast ? " fast" : ""}">${o.best ? fmt(o.best) : ""}</span><span class="p">${o.pts || ""}</span></div>`).join("")
-    + (skill ? `<div class="yr"><div><b>YOUR RACE</b><p>Started P${mo.grid} \u00b7 finished ${mo.ret ? "DNF" : "P" + (myI + 1)}${skill.gained > 0 ? ` <em class="g">\u25b2${skill.gained}</em>` : skill.gained < 0 ? ` <em class="r">\u25bc${-skill.gained}</em>` : ""}</p><p>Best lap ${fmt(mo.best)}${fastest && fastest.id !== me.id && mo.best ? ` \u00b7 +${(mo.best - fastest.best).toFixed(3)} to fastest` : mo.fast ? " \u00b7 fastest lap" : ""}</p><p>${skill.clean}/${skill.laps} clean laps \u00b7 ${mine.ovt} overtake${mine.ovt === 1 ? "" : "s"} \u00b7 top ${Math.round(mine.top * 3.6)} km/h${race.react != null ? ` \u00b7 reaction ${race.react.toFixed(3)}s` : ""}</p></div><div><b>SKILL POINTS +${skill.total}</b>${skill.items.map(([k, v]) => `<p>${k}<span>+${v}</span></p>`).join("")}<p class="rk">${rankOf(prefs.xp)} \u00b7 ${prefs.xp} career</p></div></div>` : "");
+    + (skill ? `<div class="yr"><div><b>YOUR RACE</b><p>Started P${mo.grid} \u00b7 finished ${mo.ret ? "DNF" : "P" + (myI + 1)}${skill.gained > 0 ? ` <em class="g">\u25b2${skill.gained}</em>` : skill.gained < 0 ? ` <em class="r">\u25bc${-skill.gained}</em>` : ""}</p><p>Best lap ${fmt(mo.best)}${fastest && fastest.id !== me.id && mo.best ? ` \u00b7 +${(mo.best - fastest.best).toFixed(3)} to fastest` : mo.fast ? " \u00b7 fastest lap" : ""}</p><p>${skill.clean}/${skill.laps} clean laps \u00b7 ${mine.ovt} overtake${mine.ovt === 1 ? "" : "s"} \u00b7 top ${Math.round(mine.top * 3.6)} km/h${race.react != null ? ` \u00b7 reaction ${race.react.toFixed(3)}s` : ""}</p>${rivals.map(([n, w, l, beat]) => `<p>vs ${esc(n)} <em class="${beat ? "g" : "r"}">${w}\u2013${l}</em></p>`).join("")}</div><div><b>SKILL POINTS +${skill.total}</b>${skill.items.map(([k, v]) => `<p>${k}<span>+${v}</span></p>`).join("")}<p class="rk">${rankOf(prefs.xp)} \u00b7 ${prefs.xp} career</p></div></div>` : "");
   $("#res-msg").textContent = fastest ? `Fastest lap: ${fastest.name} ${fmt(fastest.best)}` : "";
   $("#res-next").textContent = isHost() ? "Race again" : "Back to lobby"; $("#res-lobby").hidden = !isHost();
-  const cb = $("#res-chal"); cb.hidden = !race || !challengeLink(race.go.cfg.track, race.cls.id);
-  if (race) cb.onclick = () => copyChallenge(cb, race.go.cfg.track, race.cls.id);
+  // growth: every result is an invitation. The daily shares like a puzzle score; any race shares your lap as a ghost to beat
+  const cb = $("#res-chal"), link = race && challengeLink(race.go.cfg.track, race.cls.id), daily = race?.go.cfg.daily;
+  cb.hidden = !link; cb.textContent = daily != null ? "Share your daily" : "Challenge a friend";
+  if (link) cb.onclick = () => daily != null ? share(dailyText(dailyState()), link, cb) : share(`I did ${fmt(store.get(`pb3:${race.T.id}:${race.cls.id}`, {}).t)} at ${race.T.def.name} in DeskGP. Beat my lap:`, link, cb);
+  if (daily != null) { const d = dailyState(); $("#res-msg").textContent = `Daily #${d.id} \u00b7 your best ${fmt(d.best)}${d.streak > 1 ? ` \u00b7 \ud83d\udd25 ${d.streak}-day streak` : ""}`; }
   show("results");
   if (myI === 0) audio.fx("win");
 }

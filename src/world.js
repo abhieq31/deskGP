@@ -14,6 +14,10 @@ const V3 = THREE.Vector3;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+// noise specks drawn in a dozen colour batches (one fillStyle each) instead of a new style per speck: same look, far faster
+function speckle(g, w, h, count, style, sw = 1.5, sh = sw, buckets = 12) {
+  for (let b = 0; b < buckets; b++) { g.fillStyle = style((b + 0.5) / buckets, b); const m = count / buckets; for (let i = 0; i < m; i++) g.fillRect(Math.random() * w, Math.random() * h, sw, typeof sh === "function" ? sh() : sh); }
+}
 function canvasTex(w, h, draw, opts = {}) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
   draw(c.getContext("2d"), w, h);
@@ -57,6 +61,9 @@ const FinalShader = {
 
 export function createWorld(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", stencil: false });
+  // production: do not read back every shader's info log (that call forces the browser to wait for each compile and
+  // defeats parallel shader compilation: the main source of hitches when new cars or scenery first appear)
+  renderer.debug.checkShaderErrors = !!globalThis.__deskgpDebug;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -80,15 +87,15 @@ export function createWorld(canvas) {
   // ---------- textures ----------
   const asphalt = canvasTex(512, 1024, (g, w, h) => {
     g.fillStyle = "#3a3c41"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 52000; i++) { const v = 40 + Math.random() * 56; g.fillStyle = `rgba(${v},${v},${v + 3},${0.18 + Math.random() * 0.4})`; g.fillRect(Math.random() * w, Math.random() * h, 1.6, 1.6); }
+    speckle(g, w, h, 52000, (u, b) => { const v = Math.round(40 + u * 56); return `rgba(${v},${v},${v + 3},${(0.18 + ((b * 5) % 12) / 12 * 0.4).toFixed(2)})`; }, 1.6);
     for (let i = 0; i < 14; i++) { g.fillStyle = `rgba(0,0,0,${rnd(0.04, 0.09)})`; g.fillRect(rnd(0, w), 0, rnd(30, 120), h); } // repair patches
     const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(0.5, "rgba(0,0,0,0.22)"); gr.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = gr; g.fillRect(0, 0, w, h);
     g.fillStyle = "#f4f4f0"; g.fillRect(10, 0, 8, h); g.fillRect(w - 18, 0, 8, h);
   }, { repeat: [1, 1], aniso: 16 });
-  const asphaltRough = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#c8c8c8"; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { const v = rnd(120, 255); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); } }, { repeat: [1, 10], linear: true });
+  const asphaltRough = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#c8c8c8"; g.fillRect(0, 0, w, h); speckle(g, w, h, 9000, (u) => { const v = Math.round(120 + u * 135); return `rgb(${v},${v},${v})`; }, 1.5); }, { repeat: [1, 10], linear: true });
   const kerbTex = canvasTex(32, 64, (g, w, h) => { g.fillStyle = "#f1f1ec"; g.fillRect(0, 0, w, h); g.fillStyle = "#d21f26"; g.fillRect(0, 0, w, h / 2); g.fillStyle = "rgba(0,0,0,0.15)"; g.fillRect(0, h / 2 - 2, w, 2); g.fillRect(0, h - 2, w, 2); }, { repeat: [1, 1] });
-  const gravelTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#c6b28a"; g.fillRect(0, 0, w, h); for (let i = 0; i < 14000; i++) { const v = rnd(140, 230); g.fillStyle = `rgb(${v},${v * 0.9},${v * 0.72})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } }, { repeat: [1, 1] });
+  const gravelTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#c6b28a"; g.fillRect(0, 0, w, h); speckle(g, w, h, 14000, (u) => { const v = 140 + u * 90; return `rgb(${v | 0},${(v * 0.9) | 0},${(v * 0.72) | 0})`; }, 2); }, { repeat: [1, 1] });
   const runoffTex = canvasTex(64, 256, (g, w, h) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? "#2556a8" : "#c4212b"; g.fillRect(0, i * 32, w, 32); } g.fillStyle = "rgba(0,0,0,.18)"; for (let i = 0; i < 1200; i++) g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }, { repeat: [1, 1] });
   const wallTex = canvasTex(1024, 64, (g, w, h) => {
     g.fillStyle = "#e9ebee"; g.fillRect(0, 0, w, h);
@@ -110,6 +117,7 @@ export function createWorld(canvas) {
   const softDot = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(0.4, "rgba(255,255,255,0.5)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
   const boardTex = (txt, bg = "#ffffff", fg = "#111") => canvasTex(128, 128, (g, w, h) => { g.fillStyle = bg; g.fillRect(0, 0, w, h); g.strokeStyle = "#111"; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6); g.fillStyle = fg; g.font = `900 ${txt.length > 3 ? 34 : 56}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(txt, w / 2, h / 2 + 2, 116); });
   const boards = { 150: boardTex("150"), 100: boardTex("100"), 50: boardTex("50"), drs: boardTex("DRS", "#111318", "#2fe37a"), det: boardTex("DRS DET", "#111318", "#ffffff") };
+  for (const t of [asphalt, asphaltRough, kerbTex, gravelTex, runoffTex, wallTex, concreteTex, fenceTex, turfTex, checker, crowdTex, ...Object.values(boards)]) t.userData.shared = true; // reused by every circuit
 
   // ---------- lights ----------
   const hemi = new THREE.HemisphereLight(0xffffff, 0x556644, 1); scene.add(hemi);
@@ -160,12 +168,17 @@ export function createWorld(canvas) {
   }
   const groundMat = std({ roughness: 1, metalness: 0, envMapIntensity: 0.12 });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000), groundMat); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.25; scene.add(ground);
+  // painted once per setting and kept: every surface (and every later visit) gets a new texture on the same canvas
+  const grassCache = new Map();
   function grassTex(m, stripes = true) {
-    return canvasTex(256, 256, (g, w, h) => {
+    const key = m.grass + stripes, hit = grassCache.get(key);
+    if (hit) { const t = new THREE.CanvasTexture(hit); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; }
+    const made = canvasTex(256, 256, (g, w, h) => {
       g.fillStyle = m.grass; g.fillRect(0, 0, w, h); if (stripes) { g.fillStyle = m.grass2; g.fillRect(0, 0, w / 2, h); }
       for (let i = 0; i < 40; i++) { g.fillStyle = Math.random() < 0.5 ? "rgba(90,70,30,0.05)" : "rgba(0,40,0,0.07)"; g.beginPath(); g.arc(rnd(0, w), rnd(0, h), rnd(10, 40), 0, 6.3); g.fill(); }
-      for (let i = 0; i < 6000; i++) { g.fillStyle = Math.random() < 0.5 ? "rgba(255,255,200,0.06)" : "rgba(0,30,0,0.12)"; g.fillRect(Math.random() * w, Math.random() * h, 1.5, rnd(2, 5)); }
+      speckle(g, w, h, 6000, (u, b) => (b % 2 ? "rgba(255,255,200,0.06)" : "rgba(0,30,0,0.12)"), 1.5, () => rnd(2, 5), 2);
     }, { repeat: [1, 1], aniso: 16 });
+    grassCache.set(key, made.image); return made;
   }
 
   // ---------- geometry helpers ----------
@@ -204,8 +217,9 @@ export function createWorld(canvas) {
   const hillNoise = (x, z) => Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0053 + 0.4) * 0.6 + Math.sin(x * 0.011 + z * 0.007) * 0.25 + Math.sin(x * 0.023 - z * 0.019 + 2) * 0.1 + 0.55;
   const wallOff = (T, s) => (i) => s * (s > 0 ? T.wp[i] : T.wm[i]);
 
-  W.setTrack = function (T, prof) {
-    if (trackGroup) { scene.remove(trackGroup); trackGroup.traverse((o) => { o.geometry?.dispose(); }); }
+  function* trackScene(T, prof) { // a generator: it pauses (yield) between big pieces so it can be built a slice per frame
+    W.sceneReady = false;
+    if (trackGroup) { scene.remove(trackGroup); disposeTree(trackGroup); } // the old circuit, completely (materials and textures too)
     W.T = T; lights = []; flagMats = []; monitorTex = null; monitorCtx = null;
     const G = trackGroup = new THREE.Group(); scene.add(G);
     const id = T.def.mood, m = MOODS[id], street = !!T.def.street; W.mood = m; W.night = id === "night";
@@ -224,6 +238,7 @@ export function createWorld(canvas) {
     const verge = std({ map: street ? null : grassTex(m), color: street ? 0x4a4d52 : 0xffffff, roughness: 1, envMapIntensity: 0.15 });
     if (!street) { verge.map.repeat.set(1, 1); verge.map.wrapS = verge.map.wrapT = THREE.RepeatWrapping; }
     for (const s of [-1, 1]) { const vm = new THREE.Mesh(ribbon(T, 0, T.n, s * T.half, (i) => wallOff(T, s)(i) + s * 0.2, 0.005, T.step / 12), verge); vm.receiveShadow = true; G.add(vm); }
+    yield;
     // kerbs, and run-off (gravel or painted tarmac) on the outside of corners
     const kerbMat = decal({ map: kerbTex, roughness: 0.6, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const runMat = id === "sunset" ? decal({ map: runoffTex, roughness: 0.8, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }) : decal({ map: gravelTex, roughness: 1, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -243,6 +258,7 @@ export function createWorld(canvas) {
         run = -1;
       }
     }
+    yield;
     // barriers
     if (street) {
       const cm = std({ map: concreteTex, roughness: 0.8, envMapIntensity: 0.3 });
@@ -284,6 +300,7 @@ export function createWorld(canvas) {
       // abutments where the deck meets the ramps (the deck spans the lower road and its run-off in one)
       for (const e of [a0, a1]) { const i = wrap(e, T.n), ab = box(ed * 2 + T.y[i] * 2.9, T.y[i], 1.6, conc); ab.position.set(T.x[i], T.y[i] / 2, T.z[i]); ab.rotation.y = -T.heading(i); ab.rotation.y += Math.PI / 2; G.add(ab); }
     }
+    yield;
     // catch / debris fence behind the barrier, with posts
     { const fm = new THREE.MeshStandardMaterial({ map: fenceTex, color: 0x9aa0a8, transparent: true, alphaTest: 0.25, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.4, envMapIntensity: 0.3 }); fenceTex.repeat.set(1, 1);
       const fh = street ? 4.2 : 3.4;
@@ -318,6 +335,7 @@ export function createWorld(canvas) {
       const beam = box(span + 0.7, 2.2, 0.8, [steel, steel, steel, steel, std({ map: bt, roughness: 0.5 }), std({ map: bt, roughness: 0.5 })]); beam.position.set(gx, 9, gz); beam.rotation.y = -h0 + Math.PI / 2; G.add(beam);
       for (let i = 0; i < 5; i++) { const lm = new THREE.MeshBasicMaterial({ color: 0x2a0505, toneMapped: false }); const l = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8), lm), o = (i - 2) * 1.5; l.position.set(gx + T.nx[0] * o - Math.cos(h0) * 0.6, 7.3, gz + T.nz[0] * o - Math.sin(h0) * 0.6); G.add(l); lights.push(lm); }
     }
+    yield;
     // pit building + big screen + grandstands, at positions checked clear of the whole circuit (layout.js)
     const L = layout(T);
     const pitSide = T.k[wrap(40, T.n)] > 0 ? -1 : 1, outer = (i, s) => wallOff(T, s)(i);
@@ -387,16 +405,26 @@ export function createWorld(canvas) {
         L.buildings.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h / 2 + (W.heightAt ? 0 : 0), z), q.identity(), sc.set(w, h, d)); im.setMatrixAt(i, mt); });
         G.add(im);
       }
+      yield;
       // rolling hills beyond the circuit
       const B = T.box, TW = B.hx * 2 + 2600, TD = B.hz * 2 + 2600, HH = HILLS[T.id] ?? 55;
       const tg = new THREE.PlaneGeometry(TW, TD, Math.round(TW / 26), Math.round(TD / 26)); tg.rotateX(-Math.PI / 2);
       const p = tg.attributes.position;
+      // distance from every terrain vertex to the circuit, in one pass (a chamfer distance transform over the vertex grid)
+      // instead of a search per vertex: ~30x faster, and the hills only need a smooth ramp, not exact metres
+      const SX = Math.round(TW / 26), SZ = Math.round(TD / 26), gx = TW / SX, gz = TD / SZ, W1 = SX + 1, DF = new Float32Array(W1 * (SZ + 1)).fill(1e9);
+      for (let i = 0; i < T.n; i++) { const cx = (T.x[i] + TW / 2) / gx, cz = (T.z[i] + TD / 2) / gz; for (let a = Math.floor(cx) - 1; a <= Math.floor(cx) + 2; a++) for (let b = Math.floor(cz) - 1; b <= Math.floor(cz) + 2; b++) { if (a < 0 || b < 0 || a > SX || b > SZ) continue; const d = Math.hypot(a * gx - TW / 2 - T.x[i], b * gz - TD / 2 - T.z[i]), k = b * W1 + a; if (d < DF[k]) DF[k] = d; } }
+      const gd = Math.hypot(gx, gz);
+      for (let b = 0; b <= SZ; b++) for (let a = 0; a <= SX; a++) { const k = b * W1 + a; let d = DF[k]; if (a > 0) d = Math.min(d, DF[k - 1] + gx); if (b > 0) { d = Math.min(d, DF[k - W1] + gz); if (a > 0) d = Math.min(d, DF[k - W1 - 1] + gd); if (a < SX) d = Math.min(d, DF[k - W1 + 1] + gd); } DF[k] = d; }
+      for (let b = SZ; b >= 0; b--) for (let a = SX; a >= 0; a--) { const k = b * W1 + a; let d = DF[k]; if (a < SX) d = Math.min(d, DF[k + 1] + gx); if (b < SZ) { d = Math.min(d, DF[k + W1] + gz); if (a < SX) d = Math.min(d, DF[k + W1 + 1] + gd); if (a > 0) d = Math.min(d, DF[k + W1 - 1] + gd); } DF[k] = d; }
+      const dfAt = (x, z) => { const fx = clamp((x + TW / 2) / gx, 0, SX - 1e-3), fz = clamp((z + TD / 2) / gz, 0, SZ - 1e-3), a = Math.floor(fx), b = Math.floor(fz), u = fx - a, v = fz - b, k = b * W1 + a; return (DF[k] * (1 - u) + DF[k + 1] * u) * (1 - v) + (DF[k + W1] * (1 - u) + DF[k + W1 + 1] * u) * v; };
       for (let k = 0; k < p.count; k++) {
-        const x = p.getX(k), z = p.getZ(k), d = distToTrack(T, x, z), edge = Math.max(Math.abs(x) / (TW / 2), Math.abs(z) / (TD / 2));
+        const x = p.getX(k), z = p.getZ(k), d = dfAt(x, z), edge = Math.max(Math.abs(x) / (TW / 2), Math.abs(z) / (TD / 2));
         let hgt = clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * HH + 8);
         for (const [kx, kz, kr] of keepOut) if (Math.hypot(x - kx, z - kz) < kr + 30) hgt = 0;
         p.setY(k, hgt * clamp((1 - edge) * 6, 0, 1) - 0.03);
       }
+      yield;
       // mountains on the horizon (Red Bull Ring): forested slopes, bare rock and snow on the peaks, kept well beyond the hills
       if (T.def.mountains) {
         const R0 = Math.max(B.hx, B.hz) + 1500, N = 26, rock = std({ color: 0x5d6b5a, roughness: 1, flatShading: true, envMapIntensity: 0.15 }), snow = std({ color: 0xf4f7fa, roughness: 0.8, flatShading: true });
@@ -411,7 +439,7 @@ export function createWorld(canvas) {
       tg.computeVertexNormals();
       const tt = grassTex(m, false); tt.repeat.set(TW / 15, TD / 15);
       const terr = new THREE.Mesh(tg, std({ map: tt, roughness: 1, envMapIntensity: 0.12 })); terr.receiveShadow = true; G.add(terr);
-      W.heightAt = (x, z) => { const d = distToTrack(T, x, z); return clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * HH + 8); };
+      W.heightAt = (x, z) => { const d = dfAt(x, z); return clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * HH + 8); };
       const pts = L.trees.filter(([x, z]) => !keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + 8)).map(([x, z, s, r]) => [x, z, W.heightAt(x, z), s, r]);
       const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), std({ color: 0x5b4030, roughness: 1 }), pts.length);
       const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2, 1), std({ color: id === "sunset" ? 0x5d7a2f : 0x3d7c36, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
@@ -423,6 +451,7 @@ export function createWorld(canvas) {
       crown.count = nc; pine.count = np;
       trunk.castShadow = crown.castShadow = pine.castShadow = W.quality > 1; W.treeMeshes = [trunk, crown, pine]; crown.receiveShadow = true; G.add(trunk, crown, pine);
     }
+    yield;
     // TV camera towers at the big corners
     { const scaf = std({ color: 0x9aa0a8, roughness: 0.6, metalness: 0.5 }), camM = std({ color: 0x111316, roughness: 0.4 }); let made = 0, last = -999;
       for (let i = 0; i < T.n && made < 6; i += 6) {
@@ -439,6 +468,7 @@ export function createWorld(canvas) {
       const mk = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.7, 10), new THREE.MeshBasicMaterial({ color: 0xff7a00, toneMapped: false }), Math.max(1, W.apexes.length)), mt2 = new THREE.Matrix4();
       W.apexes.forEach((a, k) => { mt2.makeTranslation(a.x, 0.38 + T.y[a.i], a.z); mk.setMatrixAt(k, mt2); }); mk.count = W.apexes.length; G.add(mk); W.apexMarks = mk;
     }
+    yield;
     // merge every static, single-material circuit mesh by material: hundreds of pieces become a few dozen draw calls
     { G.updateMatrixWorld(true); const keep = new Set([...lights, ...flagMats]), byMat = new Map(), drop = [];
       const split = [];
@@ -462,7 +492,20 @@ export function createWorld(canvas) {
     }
     W.setLights(0, false); W.setMonitor(null); W.setFlags([0, 0, 0]);
     skidReset(); clearDebris();
-    warm();
+    warm(); W.sceneReady = true;
+  }
+  // build a circuit now (a race is about to start: the lineup covers it) ...
+  let sceneTok = 0;
+  let pending = null;
+  W.setTrack = function (T, prof) {
+    // the same circuit is already being built in slices: finish that build rather than throwing it away and starting over
+    if (pending && pending.T === T && pending.prof === prof && pending.tok === sceneTok) { const g = pending.g; pending = null; sceneTok++; while (!g.next().done); return; }
+    pending = null; sceneTok++; const g = trackScene(T, prof); while (!g.next().done);
+  };
+  // ... or in ~10 ms slices between frames (the menu backdrop), so the screen never stops answering. A newer build wins.
+  W.setTrackAsync = function (T, prof) {
+    const tok = ++sceneTok, g = trackScene(T, prof); pending = { T, prof, g, tok };
+    return new Promise((res) => { const step = () => { if (tok !== sceneTok) return res(false); const t0 = performance.now(); let r; do r = g.next(); while (!r.done && performance.now() - t0 < 10); if (r.done) { if (pending?.tok === tok) pending = null; res(true); } else setTimeout(step, 0); }; step(); });
   };
 
   W.resetRace = function () { skidReset(); clearDebris(); }; // nothing from the last race is left lying around
@@ -547,15 +590,19 @@ export function createWorld(canvas) {
   const CL_BODY = [[2.1, 0.3], [2.02, 0.42], [1.6, 0.5], [0.9, 0.57], [0.55, 0.6], [0.42, 0.56], [-0.12, 0.56], [-0.22, 0.7], [-0.55, 0.64], [-0.8, 0.46], [-1.55, 0.42], [-1.78, 0.34], [-1.78, 0.2], [-0.9, 0.15], [1.7, 0.17], [2.06, 0.22]];
   const clTaper = (x, y) => (x > 0.8 ? 1 - 0.6 * clamp((x - 0.8) / 1.3, 0, 1) ** 1.3 : x < -0.9 ? 1 - 0.35 * clamp((-0.9 - x) / 0.9, 0, 1) : 1) * (y > 0.46 ? 1 - (y - 0.46) * 1.5 : 1);
   const geoCache = {};
-  const cached = (k, f) => geoCache[k] || (geoCache[k] = f());
+  // shared(): textures, materials and geometries that many cars use; disposal (disposeTree) leaves them alone
+  const shared = (x) => { if (x) x.userData.shared = true; return x; };
+  const cached = (k, f) => geoCache[k] || (geoCache[k] = shared(f()));
   const tyreMat = std({ color: 0x0e0e11, roughness: 0.9, envMapIntensity: 0.25 }), capMat = std({ color: 0x2c2f36, roughness: 0.25, metalness: 0.9 }), glassMat = std({ color: 0x05070a, roughness: 0.03, metalness: 0.9, envMapIntensity: 1.8 }), carbon = std({ color: 0x101114, roughness: 0.45, metalness: 0.3, envMapIntensity: 0.6 });
   const stripeMat = std({ color: 0xffd000, roughness: 0.6 });
-  const numTex = (n, color) => canvasTex(128, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "#fff"; g.beginPath(); g.arc(64, 64, 58, 0, 6.3); g.fill(); g.fillStyle = "#111"; g.font = "italic 900 64px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(n), 64, 68); });
+  for (const m of [tyreMat, capMat, glassMat, carbon, stripeMat]) shared(m);
+  const numCache = new Map(), numTex = (n) => numCache.get(n) || numCache.set(n, shared(numTex0(n))).get(n);
+  const numTex0 = (n, color) => canvasTex(128, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "#fff"; g.beginPath(); g.arc(64, 64, 58, 0, 6.3); g.fill(); g.fillStyle = "#111"; g.font = "italic 900 64px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(String(n), 64, 68); });
 
   const decalCache = new Map();
   function decalTex(text, fg = "#ffffff", w = 512, h = 96, italic = true) {
     const k = text + fg + w + h; if (decalCache.has(k)) return decalCache.get(k);
-    const t = canvasTex(w, h, (g) => { g.clearRect(0, 0, w, h); g.fillStyle = fg; g.font = `${italic ? "italic " : ""}900 ${Math.round(h * 0.72)}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2 + 3, w - 12); });
+    const t = shared(canvasTex(w, h, (g) => { g.clearRect(0, 0, w, h); g.fillStyle = fg; g.font = `${italic ? "italic " : ""}900 ${Math.round(h * 0.72)}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2 + 3, w - 12); }));
     decalCache.set(k, t); return t;
   }
   const decalMat = (t) => new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 0.35, metalness: 0.2, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
@@ -565,6 +612,7 @@ export function createWorld(canvas) {
   // a thin rod between two points (suspension arms, mirror stalks)
   const rodGeo = (a, b, r) => { const d = new V3().subVectors(b, a), g = new THREE.CylinderGeometry(r, r, d.length(), 6); g.rotateZ(Math.PI / 2); const q = new THREE.Quaternion().setFromUnitVectors(new V3(1, 0, 0), d.clone().normalize()); g.applyQuaternion(q); g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); return g; };
   const redMat = std({ color: 0xc8102e, roughness: 0.4, metalness: 0.3 }), discMat = std({ color: 0x3a3c40, roughness: 0.5, metalness: 0.8 }), chromeLess = std({ color: 0x07080a, roughness: 0.3, metalness: 0.4 });
+  for (const m of [redMat, discMat, chromeLess]) shared(m); shared(blobTex); shared(softDot);
   const colored = (geo, hex) => { geo = geo.index ? geo : geo; for (const k of Object.keys(geo.attributes)) if (k !== "position" && k !== "normal") geo.deleteAttribute(k); const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3); geo.setAttribute("color", new THREE.BufferAttribute(a, 3)); return geo; };
   function wheelGeo(f1, r, wdt, side, accent) {
     const parts = [], cyl = (rr, l, seg) => { const k = new THREE.CylinderGeometry(rr, rr, l, seg); k.rotateX(Math.PI / 2); return k; };
@@ -814,7 +862,7 @@ export function createWorld(canvas) {
     lineT = 0; W.lineup = true;
   };
   W.hideLineup = function () {
-    if (lineGroup) { lineScene.remove(lineGroup); lineGroup.traverse((o) => { if (o.isMesh && o.geometry && !Object.values(geoCache).includes(o.geometry)) o.geometry.dispose(); }); lineGroup = null; }
+    if (lineGroup) { lineScene.remove(lineGroup); disposeTree(lineGroup); lineGroup = null; }
     W.lineup = false;
   };
   // screen positions (0..1) of each driver's head, for the name tags
@@ -834,7 +882,13 @@ export function createWorld(canvas) {
     scene.add(view.g); W.cars.set(id, view);
     return view;
   };
-  W.removeCar = function (id) { const v = W.cars.get(id); if (!v) return; scene.remove(v.g); v.g.traverse((o) => { if (o.isMesh && o.geometry && !Object.values(geoCache).includes(o.geometry)) o.geometry.dispose(); }); W.cars.delete(id); };
+  // free a car (or a lineup) completely: its own geometries, materials and textures (a race used to leak ~16 textures)
+  function disposeTree(root) {
+    const mats = new Set();
+    root.traverse((o) => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); if (o.material) for (const m of [].concat(o.material)) mats.add(m); });
+    for (const m of mats) { if (m.userData.shared) continue; for (const k of ["map", "emissiveMap", "roughnessMap", "normalMap", "alphaMap"]) { const t = m[k]; if (t && !t.userData.shared) t.dispose(); } m.dispose(); }
+  }
+  W.removeCar = function (id) { const v = W.cars.get(id); if (!v) return; scene.remove(v.g); disposeTree(v.g); W.cars.delete(id); };
   W.clearCars = function () { for (const id of [...W.cars.keys()]) W.removeCar(id); };
   W.emote = function (id, text) {
     const v = W.cars.get(id); if (!v || v.ghost) return;

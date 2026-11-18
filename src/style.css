@@ -242,7 +242,8 @@ kbd{font-family:var(--mono);font-size:12px;background:#1d2230;border:1px solid #
 #radio span{background:rgba(8,9,12,.9);padding:7px 12px;line-height:1.3}
 #keys{display:none}
 #feed{bottom:200px}
-#hud.minimal #cockpit{display:none}
+#cockpit{transition:opacity .35s,transform .35s}
+#hud.minimal #cockpit{opacity:0;transform:translateY(8px);pointer-events:none}
 #hud.minimal #feed{bottom:44px}
 #interval{top:110px}
 @media(max-width:820px),(pointer:coarse){#cockpit{grid-template-columns:auto;padding:6px;left:8px;bottom:112px}#pedals,#tyres,#dials{display:none}#wheel{width:96px;height:96px}}
@@ -276,3 +277,62 @@ kbd{font-family:var(--mono);font-size:12px;background:#1d2230;border:1px solid #
 @media(max-width:720px){.cols{grid-template-columns:minmax(0,1fr)}.opts{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.lobbyfoot button{min-width:0}}
 .seg button{min-width:0;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:420px){.opts{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- 2026 redesign: one obvious action per screen, everything else one tap away ---------- */
+.brand{display:flex;align-items:center;gap:12px}
+.brand .mark{flex:none;filter:drop-shadow(0 6px 18px rgba(255,45,45,.25))}
+.home .tag{margin:8px 0 16px}
+.driver{width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.05);margin-bottom:12px}
+.driver .dn{display:flex;flex-direction:column;min-width:0;flex:1}
+.driver .dn b{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.driver .dn small{color:var(--dim);font-size:12px;font-weight:600}
+.driver em{font-style:italic;font-weight:900;font-size:22px;font-family:var(--mono);color:#fff}
+.driver i{font-style:normal;font-size:12px;color:var(--dim);border-left:1px solid var(--line);padding-left:12px}
+.driver[aria-expanded=true] i{color:#fff}
+#driveredit{animation:pop .18s ease-out;margin-bottom:6px}
+button.big{font-size:19px;padding:16px 20px;border-radius:14px;letter-spacing:.01em;box-shadow:0 12px 30px rgba(255,45,45,.28)}
+button.big2{font-size:16px;padding:14px 20px;border-radius:14px}
+.btns.col{gap:8px;margin-top:4px}
+button.link{background:none;border:0;padding:6px 0;color:var(--dim);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+button.link:hover{color:#fff;background:none}
+.joinrow{align-items:center;min-height:40px}
+.joinrow input{flex:1}
+#colors .team{position:relative}
+#colors .team .tc{position:absolute;right:3px;top:3px;line-height:0}
+/* lobby */
+.cols{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}
+.hero{position:relative;border-radius:14px;overflow:hidden;background:radial-gradient(ellipse at 30% 20%,#1d2433,#0f1218 70%);border:1px solid var(--line)}
+.hero canvas{display:block;width:100%;height:auto;aspect-ratio:12/5}
+.hero .arrow{position:absolute;top:50%;transform:translateY(-50%);width:36px;height:56px;padding:0;font-size:28px;line-height:1;border-radius:10px;background:rgba(0,0,0,.35);z-index:1}
+.hero #trk-prev{left:6px}.hero #trk-next{right:6px}
+.hero-txt{position:absolute;left:14px;bottom:10px;display:flex;flex-direction:column;pointer-events:none}
+.hero-txt b{font-size:26px;font-weight:900;font-style:italic;letter-spacing:-.01em;text-shadow:0 2px 12px #000}
+.hero-txt small{font-size:11px;letter-spacing:.14em;color:#cfd4dc;font-weight:800}
+#trkblurb{margin:8px 0 8px;min-height:0}
+#tracks{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+#tracks .trk{flex:0 0 74px;padding:4px;gap:2px}
+#tracks .trk canvas{aspect-ratio:150/96}
+#tracks .trk b{font-size:10px}
+.cars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.cars button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 10px;border-radius:12px;text-align:left;min-width:0}
+.cars button svg{width:100%;max-width:120px;height:auto;margin-bottom:2px}
+.cars button b{font-size:13.5px}
+.cars button small{font-size:11px;color:var(--dim);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cars button.on{border-color:#fff;background:rgba(255,255,255,.12)}
+#more{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+#more summary{cursor:pointer;color:var(--dim);font-weight:700;font-size:13px;list-style:none}
+#more summary::before{content:"+ ";font-family:var(--mono)}
+#more[open] summary::before{content:"\2212  "}
+#more[open] summary{color:#fff}
+.side #players{max-height:none}
+.pl .crest{flex:none}
+.locked{pointer-events:none;opacity:.8}
+@media(max-height:760px){.hero-txt b{font-size:21px}.cars button svg{max-width:92px}.driver{padding:8px 12px}button.big{padding:13px 18px}}
+@media(max-width:720px){.cols{grid-template-columns:minmax(0,1fr)}}
+.side{display:flex;flex-direction:column;min-height:100%}
+.side .lobbyfoot{margin-top:auto;padding-top:12px;flex-direction:column;align-items:stretch;gap:8px;position:sticky;bottom:0}
+.side .lobbyfoot button{width:100%}
+.side .lobbyfoot span{font-size:12.5px;line-height:1.35}
+.hero canvas{aspect-ratio:3/1}
+@media(max-height:760px){#colors .team svg{max-width:62px}.home .tag{margin:4px 0 10px}.fine{display:none}#trkblurb{display:none}.cars button svg{max-width:80px}.cars button{padding:6px 8px}}
+.rr{grid-template-columns:38px 20px 1fr auto auto auto 54px}.rr .crest{display:block}

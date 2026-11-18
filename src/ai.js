@@ -41,7 +41,7 @@ export function drive(c, br, T, cars, dt, raceT, ctx = {}) {
   let lift = 1; br.offTarget = 0;
   const ux = Math.cos(c.h), uz = Math.sin(c.h);
   for (const o of cars) {
-    if (o === c) continue;
+    if (o === c || Math.abs((o.elev || 0) - (c.elev || 0)) > 3) continue; // a car on the other level is no traffic
     const dx = o.x - c.x, dz = o.z - c.z, along = dx * ux + dz * uz, side = -dx * uz + dz * ux;
     if (along > 0 && along < 9 + v * 0.35 && Math.abs(side) < 3.2) {
       const closing = v - o.speed;

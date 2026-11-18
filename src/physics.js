@@ -145,6 +145,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const drag = cls.drag * (1 - 0.28 * c.aeroK) * (1 - 0.35 * c.tow) * (perf ? 1 + 0.25 * D.f : 1) * v * v + extraDrag + 0.25 + regen;
   const brakeA = brk * Math.min(cls.brake, G) * (1 - 0.14 * c.lockF - 0.1 * c.lockR); // a locked tyre stops worse than a rolling one
   if (inp.reverse && vf < 2 && !c.retired) acc = -6 * surfGrip;
+  if (T.gy) acc -= 9.81 * T.gy[c.idx]; // ramps: gravity slows you uphill and pushes you down the other side
   vf += acc * dt;
   const dec = (drag + (vf > 0 || !inp.reverse ? brakeA : 0)) * dt;
   if (Math.abs(vf) <= dec && acc === 0) vf = 0; else vf -= Math.sign(vf) * Math.min(Math.abs(vf), dec);
@@ -183,6 +184,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const prev = c.idx;
   c.idx = locate(T, c.x, c.z, c.idx);
   c.lat = lateral(T, c.idx, c.x, c.z);
+  c.elev = T.y[c.idx]; // road height (the bridge at Suzuka)
   // barriers
   const lim = (c.lat > 0 ? T.wp[c.idx] : T.wm[c.idx]) - 1.1;
   if (Math.abs(c.lat) > lim && Math.abs(c.lat) < lim + 12) {
@@ -211,6 +213,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
 // Returns null, or {hit, rvn, nx, nz} with n pointing from b to a.
 export function collideCars(a, b, bOwned, opts = {}) {
   if (a.respawned > 0 || b.respawned > 0) return null;
+  if (Math.abs((a.elev || 0) - (b.elev || 0)) > 3) return null; // one on the bridge, one under it
   const dx = a.x - b.x, dz = a.z - b.z, d = Math.hypot(dx, dz), rr = CAR_R * 2;
   if (d >= rr || d === 0) return null;
   const nx = dx / d, nz = dz / d, pen = rr - d, dm = opts.damage ?? 2;
@@ -233,7 +236,7 @@ export function updateTow(c, cars) {
   if (sp > 18) {
     const ux = c.vx / sp, uz = c.vz / sp;
     for (const o of cars) {
-      if (o === c) continue;
+      if (o === c || Math.abs((o.elev || 0) - (c.elev || 0)) > 3) continue;
       const dx = o.x - c.x, dz = o.z - c.z, along = dx * ux + dz * uz;
       if (along < 2 || along > 46) continue;
       const side = Math.abs(-dx * uz + dz * ux), wdt = 2.4 + along * 0.06;

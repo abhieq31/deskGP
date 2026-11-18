@@ -4,6 +4,7 @@ import { makeCar, placeCar, stepCar, collideCars, updateTow, respawn, clamp, CLA
 import { makeBrain, drive, DRIVERS, DIFFS, codeOf } from "./ai.js";
 import { createWorld } from "./world.js";
 import { TEAMS, teamOf, uiColor } from "./teams.js";
+import { logoMark, crest, faviconHref, drawCircuitArt, carIcon } from "./brand.js";
 import { createAudio } from "./audio.js";
 import { createNet, newRoomCode, parseRoomCode, formatRoomCode, newId } from "./net.js";
 import { encodeChallenge, decodeChallenge } from "./challenge.js";
@@ -26,7 +27,8 @@ const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("deskgp:" + k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("deskgp:" + k, JSON.stringify(v)); } catch {} },
 };
-const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "mclaren", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto", aeroAuto: true, bias: 0.56, ers: 1, hud: "full", voice: true }, store.get("prefs3", {}));
+const prefs = Object.assign({ name: "", num: 0, color: COLORS[0], team: "mclaren", sound: true, ghost: false, cam: 0, xp: 0, races: 0, wins: 0, line: 1, gfx: "auto", aeroAuto: true, bias: 0.56, ers: 1, hud: "auto", voice: true }, store.get("prefs3", {}));
+if (!prefs.hudV2) { prefs.hud = "auto"; prefs.hudV2 = true; } // the cockpit cluster now appears when it matters (see updateHud)
 const savePrefs = () => store.set("prefs3", prefs);
 if (!TEAMS.some((t) => t.id === prefs.team)) prefs.team = "mclaren"; // teams from an older version
 const me = { id: newId(), name: prefs.name || "", team: prefs.team, color: teamOf(prefs.team).body, num: prefs.num || 0, joined: Date.now() };
@@ -82,13 +84,14 @@ addEventListener("keydown", (e) => {
   keys.add(e.code); audio.init();
   if (e.code === "KeyM") setSound(!prefs.sound);
   else if (e.code === "KeyH" || e.code === "KeyB") toggleHelp(); // B (or H): the key card
+  else if (S.screen === "lobby" && (e.code === "ArrowLeft" || e.code === "ArrowRight")) $(e.code === "ArrowLeft" ? "#trk-prev" : "#trk-next").click(); // browse circuits
   else if (S.screen !== "race") return;
   else if (e.code === "KeyC") { prefs.cam = (prefs.cam + 1) % 4; savePrefs(); toast(CAMS[prefs.cam]); }
-  else if (e.code === "KeyF") { const c = S.race?.mine?.c; if (c) { if (prefs.aeroAuto) { prefs.aeroAuto = false; savePrefs(); } c.aeroAuto = false; c.aeroReq = !c.aeroOpen; audio.fx("flap"); toast(c.aeroReq ? "Flap open: Straight Mode" : "Flap closed: Corner Mode"); } }
-  else if (e.code === "KeyT") { prefs.aeroAuto = !prefs.aeroAuto; savePrefs(); const c = S.race?.mine?.c; if (c) c.aeroAuto = prefs.aeroAuto; toast(prefs.aeroAuto ? "Active aero: automatic" : "Active aero: manual (F)"); }
-  else if (e.code === "BracketLeft" || e.code === "BracketRight") { prefs.bias = Math.round(clamp(prefs.bias + (e.code === "BracketRight" ? 0.01 : -0.01), 0.5, 0.62) * 100) / 100; savePrefs(); const c = S.race?.mine?.c; if (c) c.bias = prefs.bias; audio.fx("click"); toast(`Brake bias ${Math.round(prefs.bias * 100)}% \u00b7 ${biasWord(prefs.bias)}`); }
-  else if (e.code === "KeyE") { prefs.ers = (prefs.ers + 1) % 3; savePrefs(); const c = S.race?.mine?.c; if (c) c.ers = prefs.ers; toast(`ERS: ${["Harvest", "Balanced", "Attack"][prefs.ers]}`); }
-  else if (e.code === "KeyV") { prefs.hud = prefs.hud === "full" ? "minimal" : "full"; savePrefs(); $("#hud").classList.toggle("minimal", prefs.hud !== "full"); }
+  else if (e.code === "KeyF") { S.ckUntil = performance.now() + 4000; const c = S.race?.mine?.c; if (c) { if (prefs.aeroAuto) { prefs.aeroAuto = false; savePrefs(); } c.aeroAuto = false; c.aeroReq = !c.aeroOpen; audio.fx("flap"); toast(c.aeroReq ? "Flap open: Straight Mode" : "Flap closed: Corner Mode"); } }
+  else if (e.code === "KeyT") { S.ckUntil = performance.now() + 4000; prefs.aeroAuto = !prefs.aeroAuto; savePrefs(); const c = S.race?.mine?.c; if (c) c.aeroAuto = prefs.aeroAuto; toast(prefs.aeroAuto ? "Active aero: automatic" : "Active aero: manual (F)"); }
+  else if (e.code === "BracketLeft" || e.code === "BracketRight") { S.ckUntil = performance.now() + 4000; prefs.bias = Math.round(clamp(prefs.bias + (e.code === "BracketRight" ? 0.01 : -0.01), 0.5, 0.62) * 100) / 100; savePrefs(); const c = S.race?.mine?.c; if (c) c.bias = prefs.bias; audio.fx("click"); toast(`Brake bias ${Math.round(prefs.bias * 100)}% \u00b7 ${biasWord(prefs.bias)}`); }
+  else if (e.code === "KeyE") { S.ckUntil = performance.now() + 4000; prefs.ers = (prefs.ers + 1) % 3; savePrefs(); const c = S.race?.mine?.c; if (c) c.ers = prefs.ers; toast(`ERS: ${["Harvest", "Balanced", "Attack"][prefs.ers]}`); }
+  else if (e.code === "KeyV") { prefs.hud = { auto: "full", full: "minimal", minimal: "auto" }[prefs.hud] || "auto"; savePrefs(); toast({ auto: "Cockpit: when it matters", full: "Cockpit: always", minimal: "Cockpit: off" }[prefs.hud]); }
   else if (e.code === "KeyK") { prefs.voice = !prefs.voice; savePrefs(); if (!prefs.voice) speechSynthesis?.cancel(); toast(prefs.voice ? "Engineer voice on" : "Engineer voice off"); }
   else if (e.code === "KeyR") recover();
   else if (e.code === "Escape") setPaused(!S.paused);
@@ -206,24 +209,37 @@ function miniCar(t) {
   return `<svg viewBox="0 0 124 38" aria-hidden="true"><path d="M5 9h15v4H5z" fill="${d}"/><path d="M4 7h3v17H4z" fill="${a}"/><path d="M17 27 22 15c6-3 14-4 22-4l9 3h7l3-3 4 0 2 4 30 7 14 4v3H17z" fill="${b}"/><path d="M40 24c10-2 24-2 40 0l-2 3H42z" fill="${d}" opacity=".35"/><path d="M24 22h70l12 3H24z" fill="${a}" opacity=".9"/><circle cx="66" cy="12.5" r="3.3" fill="${a}"/><path d="M58 13.5c4-4 10-4 14 0" stroke="${d}" stroke-width="1.6" fill="none"/><path d="M98 28h22v3H96z" fill="${d}"/><path d="M117 24h3v7h-3z" fill="${a}"/><g fill="${d}"><circle cx="28" cy="27" r="9"/><circle cx="96" cy="28" r="8"/></g><g fill="none" stroke="#e8c400" stroke-width="1"><circle cx="28" cy="27" r="7.4"/><circle cx="96" cy="28" r="6.6"/></g><g fill="#2a2d33"><circle cx="28" cy="27" r="5"/><circle cx="96" cy="28" r="4.4"/></g></svg>`;
 }
 function rankOf(xp) { let r = RANKS[0]; for (const x of RANKS) if (xp >= x[0]) r = x; return r[1]; }
+// Home: one obvious action (Race). Who you are sits on one line you can open; joining by code hides behind a link.
+function renderDriver() {
+  const t = teamOf(prefs.team), ti = TEAMS.indexOf(t);
+  $("#drv-crest").innerHTML = crest(t, 38, ti);
+  setText("#drv-name", prefs.name || "Driver"); setText("#drv-team", t.name); setText("#drv-num", String(prefs.num || me.num || 44));
+}
 function renderMenu() {
+  $("#mark").innerHTML = logoMark(54);
   $("#name").value = prefs.name; $("#num").value = prefs.num || "";
-  $("#colors").innerHTML = TEAMS.map((t) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="--tc:${uiColor(t)}" aria-label="${esc(t.name)}">${miniCar(t)}<span>${esc(t.name.replace(" F1 Team", ""))}</span></button>`).join("");
+  $("#colors").innerHTML = TEAMS.map((t, i) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="--tc:${uiColor(t)}" aria-label="${esc(t.name)}">${miniCar(t)}<span class="tc">${crest(t, 18, i)}</span><span>${esc(t.name.replace(" F1 Team", ""))}</span></button>`).join("");
+  renderDriver();
+  const open = !prefs.name && !prefs.races; // first visit: show who you are; afterwards it is one tap away
+  $("#driveredit").hidden = !open && !S.editOpen; $("#driver").setAttribute("aria-expanded", String(!$("#driveredit").hidden));
   $("#career").textContent = prefs.races ? `${rankOf(prefs.xp)} · ${prefs.xp} points · ${prefs.wins} win${prefs.wins === 1 ? "" : "s"} from ${prefs.races} starts` : "";
   const hc = parseRoomCode(location.hash); if (hc) $("#code").value = formatRoomCode(hc);
   // opened from an invite link: the one thing to do is join, so make that the obvious button
   $("#menu").classList.toggle("invited", !!hc);
   $("#join").classList.toggle("primary", !!hc); $("#solo").classList.toggle("primary", !hc);
   $("#join").textContent = hc ? `Join ${formatRoomCode(hc)}` : "Join";
-  $("#menu .tag").textContent = hc ? `You are invited to room ${formatRoomCode(hc)}. Pick a name and team, then press Join.` : "Lights out and away we go.";
-  if (hc) $(".joinrow").after($(".btns")); else $(".joinrow").before($(".btns"));
+  $("#havecode").hidden = !!hc || S.codeOpen; $("#code").hidden = $("#join").hidden = !hc && !S.codeOpen;
+  $("#menu .tag").textContent = hc ? `You're invited to room ${formatRoomCode(hc)}.` : "Formula racing in a browser tab.";
+  if (hc) $(".joinrow").after($(".btns")); else $(".btns").after($(".joinrow")); // invited: Join comes first
   const ch = S.challenge, box = $("#chal"), ti = ch ? TRACKS.findIndex((d) => d.id === ch.track) : -1;
   box.hidden = !(ch && ti >= 0);
   if (ch && ti >= 0) box.querySelector("span").textContent = `${ch.name} challenges you: ${fmt(ch.t)} at ${TRACKS[ti].name} (${CLASSES[ch.cls]?.name || "car"}). Beat that lap.`;
 }
+$("#driver").onclick = () => { S.editOpen = $("#driveredit").hidden; $("#driveredit").hidden = !S.editOpen; $("#driver").setAttribute("aria-expanded", String(S.editOpen)); audio.fx("click"); if (S.editOpen) $("#name").focus(); };
+$("#havecode").onclick = () => { S.codeOpen = true; renderMenu(); $("#code").focus(); };
 $("#colors").onclick = (e) => { const t = e.target.closest("[data-t]")?.dataset.t; if (!t) return; prefs.team = me.team = t; me.color = teamOf(t).body; savePrefs(); renderMenu(); audio.fx("click"); };
-$("#name").oninput = (e) => { prefs.name = e.target.value.trim().slice(0, 18); savePrefs(); };
-$("#num").oninput = (e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); prefs.num = n >= 1 && n <= 99 ? n : 0; savePrefs(); };
+$("#name").oninput = (e) => { prefs.name = e.target.value.trim().slice(0, 18); savePrefs(); renderDriver(); };
+$("#num").oninput = (e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); prefs.num = n >= 1 && n <= 99 ? n : 0; savePrefs(); renderDriver(); };
 function commitName() { me.name = prefs.name || `Driver ${me.id.slice(0, 3).toUpperCase()}`; me.team = prefs.team; me.color = uiColor(teamOf(prefs.team)); me.num = prefs.num || 2 + Math.floor(Math.random() * 97); }
 $("#solo").onclick = () => { audio.init(); commitName(); enterRoom(null); };
 $("#chal-go").onclick = () => {
@@ -232,7 +248,8 @@ $("#chal-go").onclick = () => {
   Object.assign(S.room.cfg, { track: ti, cls: CLASSES[ch.cls] ? ch.cls : "gt", bots: 0, laps: 3, rules: "casual", quali: false, dmg: 1 });
   startSession("race");
 };
-$("#create").onclick = () => { audio.init(); commitName(); enterRoom(newRoomCode(), true); };
+// friends: make the room and put the invite link on the clipboard in the same tap; there is nothing else to set up
+$("#create").onclick = () => { audio.init(); commitName(); const code = newRoomCode(); enterRoom(code, true); const url = location.origin + location.pathname + "#" + code; try { navigator.clipboard?.writeText(url).then(() => { $("#copy").textContent = "Link copied \u2713"; setTimeout(() => ($("#copy").textContent = "Copy invite link"), 2500); }).catch(() => {}); } catch {} };
 $("#join").onclick = () => {
   audio.init(); const c = parseRoomCode($("#code").value);
   if (!c) { $("#menuerr").textContent = "That code does not look right. It is six letters and numbers, like KXM-4T9."; return; }
@@ -257,7 +274,8 @@ function leaveNet() { if (S.room?.net) S.room.net.close(); }
 function leaveRoom() {
   leaveNet(); S.room = null; closeLineup(); endRace();
   try { history.replaceState(null, "", location.pathname + location.search); } catch {}
-  show("menu"); startDemo();
+  try { document.querySelector("link[rel=icon]").href = faviconHref(); } catch {}
+show("menu"); startDemo();
 }
 function members() {
   const R = S.room, list = [{ id: me.id, name: me.name, team: me.team, color: me.color, num: me.num, joined: me.joined, me: true, rtc: true }];
@@ -276,7 +294,7 @@ setInterval(() => { const R = S.room; if (!R?.net) return; if (isHost()) sendLob
 function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; if (k === "rules") { R.cfg.quali = v === "gp"; R.cfg.dmg = v === "gp" ? 2 : 1; } store.set("cfg5", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
 function seg(el, items, cur, onPick) {
   el.innerHTML = items.map(([v, label]) => `<button data-v='${JSON.stringify(v)}' class="${v === cur ? "on" : ""}">${label}</button>`).join("");
-  el.onclick = (e) => { const v = e.target.dataset.v; if (v != null) onPick(JSON.parse(v)); };
+  el.onclick = (e) => { const v = e.target.closest("[data-v]")?.dataset.v; if (v != null) onPick(JSON.parse(v)); };
 }
 function drawMini(cv, T, dots) {
   const g = cv.getContext("2d"), w = cv.width, h = cv.height, B = T.box, sc = Math.min((w - 16) / (B.hx * 2), (h - 16) / (B.hz * 2));
@@ -296,35 +314,41 @@ function renderLobby() {
   $("#roomcode").textContent = R.solo ? "You vs the AI grid" : formatRoomCode(R.code); $("#roomcode").classList.toggle("solo", R.solo);
   $("#copy").hidden = R.solo;
   const nb = Math.min(R.cfg.bots, MAXCARS - mem.length);
-  $("#players").innerHTML = mem.map((m) => `<div class="pl"><i style="background:${esc(m.color)}"></i>${esc(m.name)}${m.me ? " (you)" : ""}<span class="pts">${R.points[m.id] ? R.points[m.id] + " pts" : ""}</span><em>${m.id === hid ? "host" : m.rtc ? "direct" : "relay"}</em></div>`).join("")
-    + botPool(mem).slice(0, Math.max(0, nb)).map(([[name], t], i) => `<div class="pl bot"><i style="background:${uiColor(t)}"></i>${esc(name)} <small style="opacity:.6">${esc(t.name)}</small><span class="pts">${R.points["bot" + i] ? R.points["bot" + i] + " pts" : ""}</span><em>AI</em></div>`).join("");
+  const cr = (tid) => { const t = teamOf(tid); return crest(t, 22, TEAMS.indexOf(t)); };
+  $("#players").innerHTML = mem.map((m) => `<div class="pl">${cr(m.team)}${esc(m.name)}${m.me ? " (you)" : ""}<span class="pts">${R.points[m.id] ? R.points[m.id] + " pts" : ""}</span><em>${m.id === hid ? "host" : m.rtc ? "direct" : "relay"}</em></div>`).join("")
+    + botPool(mem).slice(0, Math.max(0, nb)).map(([[name], t], i) => `<div class="pl bot">${cr(t.id)}${esc(name)}<span class="pts">${R.points["bot" + i] ? R.points["bot" + i] + " pts" : ""}</span><em>AI</em></div>`).join("");
   const n = R.net;
   $("#netstat").textContent = R.solo ? "" : !n.relaysUp ? "Connecting to the matchmaking relays…" : mem.length === 1 ? "Waiting for drivers. Send them the code or the link." : `${mem.length} drivers connected`;
   const tk = $("#tracks");
   if (!tk.childElementCount) {
-    tk.innerHTML = TRACKS.map((d, i) => `<button class="trk" data-i="${i}" title="${esc(d.name)}"><canvas width="240" height="150"></canvas><b>${d.short || d.name}</b><small>${d.country} \u00b7 ${(d.length / 1000).toFixed(3)} km${d.street ? " \u00b7 street" : ""}${d.mood === "night" ? " \u00b7 night" : ""}</small></button>`).join("");
-    tk.insertAdjacentHTML("afterend", `<p id="trkblurb"></p>`);
-    tk.querySelectorAll("canvas").forEach((cv, i) => drawMini(cv, outlineOf(TRACKS[i])));
+    tk.innerHTML = TRACKS.map((d, i) => `<button class="trk" data-i="${i}" title="${esc(d.name)}"><canvas width="150" height="96"></canvas><b>${esc(d.short || d.name)}</b></button>`).join("");
+    tk.querySelectorAll("canvas").forEach((cv, i) => drawCircuitArt(cv, outlineOf(TRACKS[i]), { mono: true, pad: 10, lw: 3 }));
     tk.onclick = (e) => { const b = e.target.closest(".trk"); if (b) setCfg("track", +b.dataset.i); };
   }
   tk.querySelectorAll(".trk").forEach((b, i) => b.classList.toggle("on", i === R.cfg.track));
-  const pb = store.get(`pb3:${TRACKS[R.cfg.track].id}:${R.cfg.cls}`, null);
-  $("#trkblurb").textContent = `${TRACKS[R.cfg.track].full}. ${TRACKS[R.cfg.track].blurb}` + (pb ? ` Your best lap: ${fmt(pb.t)}.` : "");
+  const D = TRACKS[R.cfg.track];
+  if (S.heroFor !== R.cfg.track) { S.heroFor = R.cfg.track; drawCircuitArt($("#trk-hero"), outlineOf(D), { pad: 26, lw: 7 }); tk.querySelector(".trk.on")?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }
+  setText("#trk-name", D.name); setText("#trk-meta", `${D.country.toUpperCase()} \u00b7 ${(D.length / 1000).toFixed(3)} KM${D.crossover ? " \u00b7 FIGURE OF EIGHT" : ""}`);
+  const pb = store.get(`pb3:${D.id}:${R.cfg.cls}`, null);
+  setText("#trkblurb", D.blurb + (pb ? ` Your best: ${fmt(pb.t)}.` : ""));
   const pick = (k) => (v) => setCfg(k, v);
-  seg($("#o-cls"), [["gt", "Electric GT"], ["f1", "Formula"], ["classic", "Classic"]], R.cfg.cls, pick("cls"));
+  const mt = teamOf(prefs.team), CARS = [["gt", "Electric GT", "Instant torque"], ["f1", "Formula", "2026 car, active aero"], ["classic", "Classic", "1967: no wings, it slides"]];
+  seg($("#o-cls"), CARS.map(([id, nm, sub]) => [id, `${carIcon(id, mt.body, mt.accent)}<b>${nm}</b><small>${sub}</small>`]), R.cfg.cls, pick("cls"));
   seg($("#o-laps"), [[1, "1 lap"], [3, "3"], [5, "5"], [10, "10"]], R.cfg.laps, pick("laps"));
   seg($("#o-bots"), [0, 3, 5, 7, 9].map((b) => [b, String(b)]), R.cfg.bots, pick("bots"));
   seg($("#o-diff"), DIFFS.map((d, i) => [i, d.name]), R.cfg.diff, pick("diff"));
   seg($("#o-rules"), [["casual", "Casual"], ["gp", "Grand Prix"]], R.cfg.rules || "casual", pick("rules"));
   const mine = (k, v) => { prefs[k] = v; savePrefs(); audio.fx("click"); renderLobby(); };
   seg($("#a-line"), [[0, "Off"], [1, "Corners"], [2, "Full"]], prefs.line, (v) => mine("line", v));
-  $("#lobby .panel").querySelectorAll(".cols > div:last-child").forEach((d) => d.classList.toggle("locked", !host));
+  for (const sel of ["#tracks", ".hero", "#o-cls", "#o-laps", "#o-rules", "#o-bots", "#o-diff"]) $(sel).classList.toggle("locked", !host); // the host sets the race; your racing line is yours
   $("#start").hidden = !host; $("#start").disabled = mem.length + nb < 1;
   $("#start").textContent = R.cfg.quali ? "Start qualifying" : R.raceN ? "Next race" : "Lights out";
   $("#lobbymsg").textContent = host ? (mem.length + nb < 2 ? "Just you: a time trial." : R.cfg.rules === "gp" ? "Grand Prix rules: qualifying sets the grid, then the full rulebook. Race control explains each rule the first time it comes up." : "Grid order is drawn at random.") : R.phase === "race" ? "Session in progress. You will join the next one." : "Waiting for the host to start…";
 }
 $("#copy").onclick = async () => { const url = location.origin + location.pathname + "#" + S.room.code; try { await navigator.clipboard.writeText(url); $("#copy").textContent = "Link copied"; } catch { prompt("Copy this link", url); } setTimeout(() => ($("#copy").textContent = "Copy invite link"), 1600); };
 $("#leave").onclick = leaveRoom;
+$("#trk-prev").onclick = () => { if (S.room) setCfg("track", (S.room.cfg.track + TRACKS.length - 1) % TRACKS.length); };
+$("#trk-next").onclick = () => { if (S.room) setCfg("track", (S.room.cfg.track + 1) % TRACKS.length); };
 
 // the real drivers still free once the humans have taken their seats: [[name, code, number], team]
 function botPool(mem) { const pool = []; for (const t of TEAMS) { const humans = mem.filter((m) => m.team === t.id).length; t.drivers.slice(humans).forEach((d) => pool.push([d, t])); } return pool; }
@@ -406,7 +430,7 @@ function startRace(go, demo) {
   });
   race.spect = !demo && !race.mine;
   if (race.mine) Object.assign(race.mine.c, { aeroAuto: prefs.aeroAuto, bias: prefs.bias, ers: prefs.ers });
-  $("#hud").classList.toggle("minimal", prefs.hud !== "full"); $("#radio").hidden = true;
+  S.ckUntil = 0; $("#radio").hidden = true;
   if (!demo && !quali && netNow() < go.at - 800) startIntro(race);
   if (!demo && race.mine && !prefs.seenControls) toggleHelp(true);
   if (race.mine) loadGhost(race);
@@ -419,7 +443,7 @@ function startRace(go, demo) {
     drawMapBase(T);
     $("#sess").textContent = quali ? "QUALIFYING" : "RACE";
     $("#startlights").classList.toggle("on", !quali);
-    big(T.def.name.toUpperCase(), quali ? "ONE-SHOT QUALIFYING" : `${race.laps} LAPS · ${cls.name.toUpperCase()}`);
+    big(T.def.name.toUpperCase(), quali ? "ONE-SHOT QUALIFYING" : `${race.laps} LAP${race.laps === 1 ? "" : "S"} · ${cls.name.toUpperCase()}`);
     if (race.spect) $("#spect").textContent = "Spectating. You are in the next session. ← → to switch car.";
   }
 }
@@ -462,7 +486,7 @@ function applyRemote(e, now) {
   const fl = B.fl, dm = B.dm;
   c.boosting = !!(fl & 1); c.brk = fl & 2 ? 1 : 0; c.drs = !!(fl & 4); c.retired = !!(fl & 8); c.thr = fl & 16 ? 1 : 0; c.slip = fl & 32 ? 0.6 : 0; c.respawned = fl & 64 ? 0.3 : 0; c.surf = fl & 128 ? 2 : 0;
   c.dmg.f = (dm & 15) / 15; c.dmg.r = ((dm >> 4) & 15) / 15; c.dmg.l = ((dm >> 8) & 15) / 15; c.dmg.rt = ((dm >> 12) & 15) / 15; c.dmg.e = ((dm >> 16) & 15) / 15;
-  c.total = B.total; c.idx = wrap(B.total, S.race.T.n); c.speed = Math.hypot(c.vx, c.vz);
+  c.total = B.total; c.idx = wrap(B.total, S.race.T.n); c.elev = S.race.T.y[c.idx]; c.speed = Math.hypot(c.vx, c.vz);
   c.lat = (c.x - S.race.T.x[c.idx]) * S.race.T.nx[c.idx] + (c.z - S.race.T.z[c.idx]) * S.race.T.nz[c.idx];
 }
 
@@ -708,6 +732,11 @@ function drawMapBase(T) {
   const g = mapBase.getContext("2d"), B = T.box, sc = Math.min((440 - 16) / (B.hx * 2), (300 - 16) / (B.hz * 2)), X = (x) => 220 + x * sc, Z = (z) => 150 + z * sc;
   g.lineJoin = g.lineCap = "round"; g.beginPath(); for (let i = 0; i < T.n; i += 3) g.lineTo(X(T.x[i]), Z(T.z[i])); g.closePath();
   g.strokeStyle = "rgba(0,0,0,.45)"; g.lineWidth = 9; g.stroke(); g.strokeStyle = "rgba(255,255,255,.92)"; g.lineWidth = 3.5; g.stroke();
+  if (T.cross) { // the bridge: redraw the raised stretch on top, with a gap, so the crossover reads as over and under
+    const { up } = T.cross, nA = Math.round((T.cross.flat + T.cross.ramp * 0.4) / T.step); g.beginPath();
+    for (let k = -nA; k <= nA; k += 2) { const i = wrap(up + k, T.n); g.lineTo(X(T.x[i]), Z(T.z[i])); }
+    g.strokeStyle = "rgba(10,12,16,.95)"; g.lineWidth = 11; g.stroke(); g.strokeStyle = "rgba(255,255,255,.92)"; g.lineWidth = 3.5; g.stroke();
+  }
   const tx = T.tx[0], tz = T.tz[0]; g.strokeStyle = "#e10600"; g.lineWidth = 4; g.beginPath(); g.moveTo(X(T.x[0]) - tz * 9, Z(T.z[0]) + tx * 9); g.lineTo(X(T.x[0]) + tz * 9, Z(T.z[0]) - tx * 9); g.stroke();
 }
 const hudCache = {};
@@ -759,7 +788,11 @@ function updateHud(race, dt, now) {
   if (view === race.mine && g > (race.lastGear || 0) && race.lastGear) audio.fx("shift"); race.lastGear = g;
   const rp = Math.round((GEARS[cls.id] ? rpmOf(cls, c.speed) : c.thr) * 15); if (hudCache.rpm !== rp) { hudCache.rpm = rp; [...$("#rpm").children].forEach((el, i) => el.classList.toggle("on", i < rp)); }
   setClass("#b-drs", "on", !!c.aeroOpen); setClass("#b-ovt", "on", !!view.drsReady || !!c.overtake);
-  if (view === race.mine && prefs.hud === "full") {
+  // cockpit cluster: always (full), never (minimal), or for a few seconds when it matters (auto): a setting changed, a lock-up
+  if (view === race.mine && (c.lockF > 0.45 || c.lockR > 0.45)) S.ckUntil = performance.now() + 4000;
+  const ck = view === race.mine && (prefs.hud === "full" || (prefs.hud === "auto" && performance.now() < (S.ckUntil || 0)));
+  setClass("#hud", "minimal", !ck);
+  if (ck) {
     $("#wheelg").setAttribute("transform", `rotate(${(c.steer * 100).toFixed(1)})`); setText("#wheelspd", String(kmh));
     $("#pd-thr").style.height = (c.thr * 100).toFixed(0) + "%"; $("#pd-brk").style.height = (c.brk * 100).toFixed(0) + "%";
     const tk = c.tt.map((x) => Math.round(x)).join();
@@ -851,7 +884,7 @@ function hostFinish(race, raceT) {
   const order = classify(race);
   if (race.quali) {
     R.qgrid = order.map((e) => e.id); R.phase = "lobby";
-    const res = { t: "res", quali: true, order: order.map((e) => ({ id: e.id, name: e.name, code: e.code, color: e.color, kind: e.kind, best: e.best })), track: race.T.def.name, n: race.go.n };
+    const res = { t: "res", quali: true, order: order.map((e) => ({ id: e.id, name: e.name, code: e.code, color: e.color, team: e.team, kind: e.kind, best: e.best })), track: race.T.def.name, n: race.go.n };
     R.net?.send(res, { reliable: true }); sendLob(); showResults(res);
     return;
   }
@@ -871,9 +904,9 @@ function showResults(res, skipPodium) {
   if (res.quali) {
     $("#res-sub").textContent = `${res.track} · QUALIFYING`;
     $("#res-title").textContent = myI >= 0 ? (myI === 0 ? "POLE POSITION" : `You start P${myI + 1}`) : `${lead.name} takes pole`;
-    $("#res-table").innerHTML = res.order.map((o, i) => `<div class="rr${o.id === me.id ? " me" : ""}" style="animation-delay:${i * 50}ms"><b>P${i + 1}</b><i style="background:${esc(o.color)}"></i><span>${esc(o.code)} · ${esc(o.name)}${o.kind === "b" ? " <small style='opacity:.5'>AI</small>" : ""}</span><span class="t">${o.best == null ? "NO TIME" : i === 0 ? fmt(o.best) : "+" + (o.best - lead.best).toFixed(3)}</span><span></span><span></span><span class="p"></span></div>`).join("");
+    $("#res-table").innerHTML = res.order.map((o, i) => `<div class="rr${o.id === me.id ? " me" : ""}" style="animation-delay:${i * 50}ms"><b>P${i + 1}</b>${o.team ? crest(teamOf(o.team), 20, TEAMS.indexOf(teamOf(o.team))) : `<i style="background:${esc(o.color)}"></i>`}<span>${esc(o.code)} · ${esc(o.name)}${o.kind === "b" ? " <small style='opacity:.5'>AI</small>" : ""}</span><span class="t">${o.best == null ? "NO TIME" : i === 0 ? fmt(o.best) : "+" + (o.best - lead.best).toFixed(3)}</span><span></span><span></span><span class="p"></span></div>`).join("");
     $("#res-msg").textContent = isHost() ? "The race starts from this grid in 10 seconds." : "The host starts the race from this grid.";
-    $("#res-next").textContent = isHost() ? "Start the race" : "Back to lobby";
+    $("#res-next").textContent = isHost() ? "Start the race" : "Back to lobby"; $("#res-lobby").hidden = true;
     if (isHost()) qTimer = setTimeout(() => { if (S.screen === "results") $("#res-next").click(); }, 10000);
     show("results"); return;
   }
@@ -888,13 +921,13 @@ function showResults(res, skipPodium) {
     skill = { items, total, gained, clean, laps: mine.lapsDone };
     prefs.races++; prefs.xp += total; if (myI === 0 && !mo.ret) prefs.wins++; savePrefs();
   }
-  $("#res-sub").textContent = `${res.track.toUpperCase()} \u00b7 ${res.laps || ""} LAPS \u00b7 CLASSIFICATION`;
+  $("#res-sub").textContent = `${res.track.toUpperCase()} \u00b7 ${res.laps || ""} LAP${res.laps === 1 ? "" : "S"} \u00b7 CLASSIFICATION`;
   $("#res-title").textContent = mo ? (mo.ret ? "RETIRED" : myI === 0 ? "RACE WINNER" : myI <= 2 ? `P${myI + 1} \u00b7 PODIUM` : myI <= 9 ? `P${myI + 1} \u00b7 POINTS` : `P${myI + 1}`) : `${lead.name} wins`;
   const fastest = res.order.find((o) => o.fast);
-  $("#res-table").innerHTML = `<div class="rr hd"><b>POS</b><i></i><span>DRIVER</span><span class="t">TIME / GAP</span><span class="pn"></span><span class="bl">BEST LAP</span><span class="p">PTS</span></div>` + res.order.map((o, i) => `<div class="rr${o.id === me.id ? " me" : ""}" style="animation-delay:${i * 45}ms"><b>${o.ret ? "DNF" : i + 1}</b><i style="background:${esc(o.color)}"></i><span><em class="no">${o.num ?? ""}</em> ${esc(o.name)} <small>${esc(o.code)}${o.kind === "b" ? " \u00b7 AI" : ""}</small></span><span class="t">${o.ret ? "RETIRED" : o.laps < lead.laps ? `+${lead.laps - o.laps} LAP${lead.laps - o.laps > 1 ? "S" : ""}` : o.time == null ? "-" : i === 0 ? fmt(o.time) : "+" + (o.time - lead.time).toFixed(3)}</span><span class="pn">${o.pen ? `+${o.pen}s` : ""}</span><span class="bl${o.fast ? " fast" : ""}">${o.best ? fmt(o.best) : ""}</span><span class="p">${o.pts || ""}</span></div>`).join("")
+  $("#res-table").innerHTML = `<div class="rr hd"><b>POS</b><i></i><span>DRIVER</span><span class="t">TIME / GAP</span><span class="pn"></span><span class="bl">BEST LAP</span><span class="p">PTS</span></div>` + res.order.map((o, i) => `<div class="rr${o.id === me.id ? " me" : ""}" style="animation-delay:${i * 45}ms"><b>${o.ret ? "DNF" : i + 1}</b>${o.team ? crest(teamOf(o.team), 20, TEAMS.indexOf(teamOf(o.team))) : `<i style="background:${esc(o.color)}"></i>`}<span><em class="no">${o.num ?? ""}</em> ${esc(o.name)} <small>${esc(o.code)}${o.kind === "b" ? " \u00b7 AI" : ""}</small></span><span class="t">${o.ret ? "RETIRED" : o.laps < lead.laps ? `+${lead.laps - o.laps} LAP${lead.laps - o.laps > 1 ? "S" : ""}` : o.time == null ? "-" : i === 0 ? fmt(o.time) : "+" + (o.time - lead.time).toFixed(3)}</span><span class="pn">${o.pen ? `+${o.pen}s` : ""}</span><span class="bl${o.fast ? " fast" : ""}">${o.best ? fmt(o.best) : ""}</span><span class="p">${o.pts || ""}</span></div>`).join("")
     + (skill ? `<div class="yr"><div><b>YOUR RACE</b><p>Started P${mo.grid} \u00b7 finished ${mo.ret ? "DNF" : "P" + (myI + 1)}${skill.gained > 0 ? ` <em class="g">\u25b2${skill.gained}</em>` : skill.gained < 0 ? ` <em class="r">\u25bc${-skill.gained}</em>` : ""}</p><p>Best lap ${fmt(mo.best)}${fastest && fastest.id !== me.id && mo.best ? ` \u00b7 +${(mo.best - fastest.best).toFixed(3)} to fastest` : mo.fast ? " \u00b7 fastest lap" : ""}</p><p>${skill.clean}/${skill.laps} clean laps \u00b7 ${mine.ovt} overtake${mine.ovt === 1 ? "" : "s"} \u00b7 top ${Math.round(mine.top * 3.6)} km/h${race.react != null ? ` \u00b7 reaction ${race.react.toFixed(3)}s` : ""}</p></div><div><b>SKILL POINTS +${skill.total}</b>${skill.items.map(([k, v]) => `<p>${k}<span>+${v}</span></p>`).join("")}<p class="rk">${rankOf(prefs.xp)} \u00b7 ${prefs.xp} career</p></div></div>` : "");
   $("#res-msg").textContent = fastest ? `Fastest lap: ${fastest.name} ${fmt(fastest.best)}` : "";
-  $("#res-next").textContent = "Continue";
+  $("#res-next").textContent = isHost() ? "Race again" : "Back to lobby"; $("#res-lobby").hidden = !isHost();
   const cb = $("#res-chal"); cb.hidden = !race || !challengeLink(race.go.cfg.track, race.cls.id);
   if (race) cb.onclick = () => copyChallenge(cb, race.go.cfg.track, race.cls.id);
   show("results");
@@ -919,7 +952,7 @@ function startIntro(race) {
   pick.sort((a, b) => g.indexOf(a) - g.indexOf(b));
   world.showLineup(pick.map((x) => ({ team: teamOf(x.team), number: x.num })), race.cls.id);
   const tags = pick.map((x) => ({ top: `P${g.indexOf(x) + 1}`, name: x.name + (x.id === me.id ? " (you)" : ""), team: teamOf(x.team).name, color: uiColor(teamOf(x.team)), ink: teamOf(x.team).ink }));
-  const tick = () => { const left = Math.ceil((race.go.at - 800 - netNow()) / 1000); if (left <= 0 || S.race !== race) { closeLineup(); world.snapCamera(); return; } lineupOverlay(race.T.def.name.toUpperCase(), `${race.laps} LAPS \u00b7 ${race.cls.name.toUpperCase()} \u00b7 ${race.gp ? "GRAND PRIX RULES" : "CASUAL"}`, tags, "", `Lights out in ${left}`, null); };
+  const tick = () => { const left = Math.ceil((race.go.at - 800 - netNow()) / 1000); if (left <= 0 || S.race !== race) { closeLineup(); world.snapCamera(); return; } lineupOverlay(race.T.def.name.toUpperCase(), `${race.laps} LAP${race.laps === 1 ? "" : "S"} \u00b7 ${race.cls.name.toUpperCase()} \u00b7 ${race.gp ? "GRAND PRIX RULES" : "CASUAL"}`, tags, "", `Lights out in ${left}`, null); };
   tick(); clearInterval(luTimer); luTimer = setInterval(tick, 250);
 }
 const rating = (o, i) => Math.round(clamp(55 + ((o.grid || i + 1) - (i + 1)) * 4 + (o.ovt || 0) * 2 + (o.clean || 0) * 2 + (i === 0 ? 10 : 0) - (o.pen || 0) - (o.ret ? 30 : 0), 10, 99));
@@ -934,7 +967,7 @@ function showPodium(res) {
   const lead = res.order[0];
   const board = `<div class="lb-row lb-h"><span>DRIVER</span><span>POS</span><span>GRID</span><span>TIME</span><span>BEST LAP</span><span>TOP</span><span>OVERTAKES</span><span>PTS</span><span>RATING</span></div>` + shown.map((o) => { const i = res.order.indexOf(o), gained = (o.grid || i + 1) - (i + 1); return `<div class="lb-row${o.id === me.id ? " me" : ""}"><span><i style="background:${esc(uiColor(teamOf(o.team)))}"></i>${esc(o.name)}</span><span>${o.ret ? "DNF" : "P" + (i + 1)}</span><span>${o.grid ? "P" + o.grid : "-"} ${gained > 0 ? `<em class="g">\u25b2${gained}</em>` : gained < 0 ? `<em class="r">\u25bc${-gained}</em>` : ""}</span><span>${o.ret ? "-" : i === 0 ? fmt(o.time) : o.laps < lead.laps ? `+${lead.laps - o.laps}L` : o.time != null ? "+" + (o.time - lead.time).toFixed(3) : "-"}</span><span class="${o.fast ? "p" : ""}">${o.best ? fmt(o.best) : "-"}</span><span>${o.top || "-"} km/h</span><span>${o.ovt ?? 0}</span><span>${o.pts || 0}</span><span class="rt">${rating(o, i)}</span></div>`; }).join("");
   let left = 12;
-  const tick = () => { lineupOverlay("RACE RESULT", `${res.track.toUpperCase()} \u00b7 ${res.laps || ""} LAPS`, tags, board, `Classification in ${left}s`, { label: "Classification", go: () => { closeLineup(); showResults(res, true); } }); if (left-- <= 0) { closeLineup(); showResults(res, true); } };
+  const tick = () => { lineupOverlay("RACE RESULT", `${res.track.toUpperCase()} \u00b7 ${res.laps || ""} LAP${res.laps === 1 ? "" : "S"}`, tags, board, `Classification in ${left}s`, { label: "Classification", go: () => { closeLineup(); showResults(res, true); } }); if (left-- <= 0) { closeLineup(); showResults(res, true); } };
   $("#hud").hidden = true; for (const id of ["menu", "lobby", "results"]) $("#" + id).hidden = true;
   tick(); clearInterval(luTimer); luTimer = setInterval(tick, 1000);
   if (mine && res.order.indexOf(mine) === 0) audio.fx("win");
@@ -943,8 +976,11 @@ $("#res-next").onclick = () => {
   clearTimeout(qTimer);
   const R = S.room;
   if ($("#res-next").textContent === "Start the race" && isHost() && R?.qgrid) { endRace(); startSession("race", R.qgrid); return; }
+  // the host's (or solo player's) obvious next step is another race, same settings, straight to the grid
+  if (isHost() && R) { endRace(); startSession(R.cfg.quali ? "quali" : "race"); return; }
   endRace(); show("lobby"); renderLobby(); startDemo(true);
 };
+$("#res-lobby").onclick = () => { clearTimeout(qTimer); endRace(); show("lobby"); renderLobby(); startDemo(true); };
 
 // ---------- main loop ----------
 let last = performance.now(), acc = 0;

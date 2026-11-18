@@ -14,12 +14,13 @@ for (const def of TRACKS.filter((d) => !process.env.TRACKS || process.env.TRACKS
   console.log(`  official ${d0(def.length)} m, built ${d0(T.len)} m, ${T.drsZones.length} DRS zones`);
   if (Math.abs(T.len - def.length) / def.length > 0.04) bad("length differs from the real circuit by more than 4%");
   let minSelf = 1e9;
-  for (let i = 0; i < T.n; i += 2) for (let j = i + 40; j < T.n; j += 2) { if (T.n - j + i < 40) continue; const d = Math.hypot(T.x[i] - T.x[j], T.z[i] - T.z[j]); if (d < minSelf) minSelf = d; }
-  console.log(`  closest approach of two stretches: ${minSelf.toFixed(0)} m`); if (minSelf < T.width + 2) bad(`track passes ${minSelf.toFixed(1)} m from itself`);
+  for (let i = 0; i < T.n; i += 2) for (let j = i + 40; j < T.n; j += 2) { if (T.n - j + i < 40 || T.apart(i, j)) continue; const d = Math.hypot(T.x[i] - T.x[j], T.z[i] - T.z[j]); if (d < minSelf) minSelf = d; }
+  console.log(`  closest approach of two stretches: ${minSelf.toFixed(0)} m`); if (T.cross) console.log(`  crossover: bridge ${T.cross.H} m high over ${(T.cross.flat * 2).toFixed(0)} m, ramps ${T.cross.ramp} m, crossing angle ${(Math.asin(Math.min(1, T.cross.sinA)) * 57.3).toFixed(0)} deg`); if (minSelf < T.width + 2) bad(`track passes ${minSelf.toFixed(1)} m from itself`);
   // barriers: never closer to another part of the circuit than to their own stretch, never on tarmac
   let wallBad = 0;
   for (let i = 0; i < T.n; i += 2) for (const sg of [1, -1]) {
-    const o = sg > 0 ? T.wp[i] : T.wm[i], px = T.x[i] + T.nx[i] * sg * o, pz = T.z[i] + T.nz[i] * sg * o, d = distToTrack(T, px, pz, 1);
+    const o = sg > 0 ? T.wp[i] : T.wm[i], px = T.x[i] + T.nx[i] * sg * o, pz = T.z[i] + T.nz[i] * sg * o;
+    let d = Infinity; T.near(px, pz, 60, (j) => { if (!T.apart(i, j)) d = Math.min(d, Math.hypot(px - T.x[j], pz - T.z[j])); }); // same level only (bridge)
     if (d < o - 1.2 || d < T.half + 0.5) wallBad++; // never on, or within 0.5 m of, any tarmac
   }
   if (wallBad) bad(`${wallBad} barrier points intrude on another part of the circuit`);

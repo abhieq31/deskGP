@@ -81,6 +81,27 @@ export function buildTrack(def) {
   T.nx = new Float32Array(n); T.nz = new Float32Array(n);
   for (let i = 0; i < n; i++) { T.nx[i] = -T.tz[i]; T.nz[i] = T.tx[i]; }
 
+  // Elevation. Flat (0) everywhere, except on a circuit that crosses itself (Suzuka's figure of eight): there one
+  // stretch climbs on smooth ramps to a bridge over the other. T.y = road height (m), T.gy = gradient along the lap.
+  T.y = new Float32Array(n); T.gy = null; T.cross = null;
+  if (def.crossover) {
+    let best = Infinity, bi = 0, bj = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 150; j < n; j++) { if (n - j + i < 150) continue; const d = (x[i] - x[j]) ** 2 + (z[i] - z[j]) ** 2; if (d < best) { best = d; bi = i; bj = j; } }
+    const up = def.crossover === "first" ? bi : bj, low = up === bi ? bj : bi;
+    const sinA = Math.abs(T.tx[up] * T.tz[low] - T.tz[up] * T.tx[low]);
+    // the deck spans the lower road and its run-off on both sides; then 160 m ramps (about 6% at the steepest)
+    const H = 8, flat = Math.min(110, (T.half + 26) / Math.max(sinA, 0.35)), ramp = 160;
+    for (let k = -Math.ceil((flat + ramp) / step); k <= Math.ceil((flat + ramp) / step); k++) {
+      const sd = Math.abs(k) * step, u = Math.min(1, Math.max(0, (sd - flat) / ramp));
+      T.y[wrap(up + k, n)] = H * (1 - u * u * (3 - 2 * u));
+    }
+    T.gy = new Float32Array(n);
+    for (let i = 0; i < n; i++) T.gy[i] = (T.y[wrap(i + 1, n)] - T.y[wrap(i - 1, n)]) / (2 * step);
+    T.cross = { up, low, flat, ramp, H, sinA, dist: Math.sqrt(best) };
+  }
+  // two samples are on different levels (one on the bridge, one under it): they never interact
+  T.apart = (i, j) => Math.abs(T.y[i] - T.y[j]) > 3;
+
   // Racing line: minimise curvature of the offset path inside the track limits.
   const C = 4, cn = Math.floor(n / C), lim = T.half - 1.7;
   const off = new Float32Array(cn);
@@ -143,7 +164,7 @@ export function buildTrack(def) {
   };
   const geo = (o, i, sgn) => {
     let lo = T.half + (def.street ? 1.2 : 2.2), hi = o;
-    const ok = (d) => { const px = x[i] + T.nx[i] * sgn * d, pz = z[i] + T.nz[i] * sgn * d, lim = (d - 0.6) * (d - 0.6); return T.near(px, pz, d, (j) => (px - x[j]) ** 2 + (pz - z[j]) ** 2 >= lim); };
+    const ok = (d) => { const px = x[i] + T.nx[i] * sgn * d, pz = z[i] + T.nz[i] * sgn * d, lim = (d - 0.6) * (d - 0.6); return T.near(px, pz, d, (j) => T.apart(i, j) || (px - x[j]) ** 2 + (pz - z[j]) ** 2 >= lim); }; // track on the other level does not count
     if (ok(hi)) return hi;
     for (let k = 0; k < 7; k++) { const m = (lo + hi) / 2; if (ok(m)) lo = m; else hi = m; }
     return lo;
@@ -153,6 +174,7 @@ export function buildTrack(def) {
   T.wp = smoothCyclic(gp, 6, 2); T.wm = smoothCyclic(gm, 6, 2);
   const wmin = T.half + (def.street ? 1.2 : 2.2);
   for (let i = 0; i < n; i++) { T.wp[i] = Math.max(wmin, Math.min(T.wp[i], gp[i])); T.wm[i] = Math.max(wmin, Math.min(T.wm[i], gm[i])); }
+  for (let i = 0; i < n; i++) if (T.y[i] > 0.5) { T.wp[i] = T.wm[i] = wmin; } // raised: tight parapets on the bridge and its ramps
   T.wallMax = Math.max(...T.wp, ...T.wm);
   // DRS: one detection point 120 m before each activation zone
   T.drsZones = zones.map(([a, b]) => ({ a: wrap(a, n), b: wrap(b, n), det: wrap(a - 60, n) }));

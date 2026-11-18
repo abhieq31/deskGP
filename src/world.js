@@ -7,7 +7,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeVertices, mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { wrap, gridPose } from "./track.js";
+import { wrap, gridPose, locate } from "./track.js";
 import { layout, rng } from "./layout.js";
 
 const V3 = THREE.Vector3;
@@ -176,7 +176,7 @@ export function createWorld(canvas) {
     const cnt = i1 - i0 + 1, pos = new Float32Array(cnt * 6), uv = new Float32Array(cnt * 4), idx = [];
     for (let k = 0; k < cnt; k++) {
       const i = wrap(i0 + k, T.n), A = fa(i), B = fb(i);
-      pos.set([T.x[i] + T.nx[i] * A, y, T.z[i] + T.nz[i] * A, T.x[i] + T.nx[i] * B, y, T.z[i] + T.nz[i] * B], k * 6);
+      const yy = y + T.y[i]; pos.set([T.x[i] + T.nx[i] * A, yy, T.z[i] + T.nz[i] * A, T.x[i] + T.nx[i] * B, yy, T.z[i] + T.nz[i] * B], k * 6);
       uv.set([0, (i0 + k) * vScale, 1, (i0 + k) * vScale], k * 4);
       if (k < cnt - 1) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2);
     }
@@ -188,8 +188,8 @@ export function createWorld(canvas) {
   function wallGeo(T, off, y0, y1, uScale) {
     const cnt = T.n + 1, pos = new Float32Array(cnt * 6), uv = new Float32Array(cnt * 4), idx = [];
     for (let k = 0; k < cnt; k++) {
-      const i = k % T.n, o = off(i), x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o;
-      pos.set([x, y0, z, x, y1, z], k * 6); uv.set([k * uScale, 0, k * uScale, 1], k * 4);
+      const i = k % T.n, o = off(i), x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o, e = T.y[i];
+      pos.set([x, y0 + e, z, x, y1 + e, z], k * 6); uv.set([k * uScale, 0, k * uScale, 1], k * 4);
       if (k < cnt - 1) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2);
     }
     const g = new THREE.BufferGeometry();
@@ -200,7 +200,7 @@ export function createWorld(canvas) {
   const decal = (o) => std({ roughness: 0.9, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...o });
   const flat = (w, d, mat, x, z, rot, y) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.set(-Math.PI / 2, 0, -rot); m.position.set(x, y, z); m.receiveShadow = true; return m; };
   const distToTrack = (T, x, z) => T.dist(x, z, 600);
-  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95, imola: 45, zandvoort: 34, cota: 28, hungaroring: 55, barcelona: 48, albertpark: 6 };
+  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95, imola: 45, zandvoort: 34, cota: 28, hungaroring: 55, barcelona: 48, albertpark: 6, suzuka: 60 };
   const hillNoise = (x, z) => Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0053 + 0.4) * 0.6 + Math.sin(x * 0.011 + z * 0.007) * 0.25 + Math.sin(x * 0.023 - z * 0.019 + 2) * 0.1 + 0.55;
   const wallOff = (T, s) => (i) => s * (s > 0 ? T.wp[i] : T.wm[i]);
 
@@ -262,9 +262,27 @@ export function createWorld(canvas) {
       if (tp.length) {
         const tg = new THREE.TorusGeometry(0.34, 0.16, 6, 12); tg.rotateX(Math.PI / 2);
         const ti = new THREE.InstancedMesh(tg, std({ color: 0x18181b, roughness: 0.9 }), tp.length * 3), mt = new THREE.Matrix4(); let k = 0;
-        for (const [i, out] of tp) for (let lvl = 0; lvl < 3; lvl++) { const o = wallOff(T, out)(i) - out * 0.55; mt.makeTranslation(T.x[i] + T.nx[i] * o, 0.17 + lvl * 0.32, T.z[i] + T.nz[i] * o); ti.setMatrixAt(k++, mt); }
+        for (const [i, out] of tp) for (let lvl = 0; lvl < 3; lvl++) { const o = wallOff(T, out)(i) - out * 0.55; mt.makeTranslation(T.x[i] + T.nx[i] * o, 0.17 + lvl * 0.32 + T.y[i], T.z[i] + T.nz[i] * o); ti.setMatrixAt(k++, mt); }
         ti.castShadow = true; G.add(ti);
       }
+    }
+    // the bridge (Suzuka's crossover): a concrete deck under the raised road, parapets, abutments and pillars, and
+    // grass embankments down both sides of the ramps. The lower road runs underneath.
+    if (T.cross) {
+      const { up, flat, ramp } = T.cross, nF = Math.round(flat / T.step), nA = Math.round((flat + ramp) / T.step);
+      const conc = std({ color: 0xb4b8be, roughness: 0.85, envMapIntensity: 0.3, side: THREE.DoubleSide }), bank = std({ map: grassTex(m), roughness: 1, envMapIntensity: 0.15, side: THREE.DoubleSide });
+      // a strip between two curves along the lap: each curve gives [lateral offset, height above the road] per sample
+      const band = (i0, i1, ca, cb) => { const cnt = i1 - i0 + 1, pos = new Float32Array(cnt * 6), idx = []; for (let k = 0; k < cnt; k++) { const i = wrap(i0 + k, T.n), [oa, ya] = ca(i), [ob, yb] = cb(i); pos.set([T.x[i] + T.nx[i] * oa, ya, T.z[i] + T.nz[i] * oa, T.x[i] + T.nx[i] * ob, yb, T.z[i] + T.nz[i] * ob], k * 6); if (k < cnt - 1) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2); } const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g; };
+      const ed = T.half + 2.6, a0 = up - nF, a1 = up + nF;
+      G.add(shadowed(new THREE.Mesh(band(a0, a1, (i) => [-ed, T.y[i] - 1.3], (i) => [ed, T.y[i] - 1.3]), conc)));               // deck underside
+      for (const sd of [-1, 1]) {
+        G.add(shadowed(new THREE.Mesh(band(a0, a1, (i) => [sd * ed, T.y[i] - 1.3], (i) => [sd * ed, T.y[i] + 1.1]), conc)));      // deck face and parapet
+        G.add(shadowed(new THREE.Mesh(band(a0, a1, (i) => [sd * ed, T.y[i] + 1.1], (i) => [sd * (ed - 0.4), T.y[i] + 1.1]), conc)));
+        // embankments along both ramps: from the barrier line down to the ground at about 35 degrees
+        for (const [r0, r1] of [[up - nA, a0], [a1, up + nA]]) G.add(shadowed(new THREE.Mesh(band(r0, r1, (i) => [sd * (ed - 0.2), T.y[i]], (i) => [sd * (ed - 0.2 + T.y[i] * 1.45), 0]), bank), false));
+      }
+      // abutments where the deck meets the ramps (the deck spans the lower road and its run-off in one)
+      for (const e of [a0, a1]) { const i = wrap(e, T.n), ab = box(ed * 2 + T.y[i] * 2.9, T.y[i], 1.6, conc); ab.position.set(T.x[i], T.y[i] / 2, T.z[i]); ab.rotation.y = -T.heading(i); ab.rotation.y += Math.PI / 2; G.add(ab); }
     }
     // catch / debris fence behind the barrier, with posts
     { const fm = new THREE.MeshStandardMaterial({ map: fenceTex, color: 0x9aa0a8, transparent: true, alphaTest: 0.25, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.4, envMapIntensity: 0.3 }); fenceTex.repeat.set(1, 1);
@@ -272,7 +290,7 @@ export function createWorld(canvas) {
       for (const s of [-1, 1]) { const g = wallGeo(T, (i) => wallOff(T, s)(i) + s * (street ? 0.5 : 0.35), 1.0, fh, T.step / 2.6); const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setY(k, uv.getY(k) * (fh - 1) / 2.6); G.add(new THREE.Mesh(g, fm)); }
       const post = []; for (let i = 0; i < T.n; i += 3) for (const s of [-1, 1]) post.push([i, s]);
       const pg = new THREE.CylinderGeometry(0.05, 0.05, fh, 5), pm = new THREE.InstancedMesh(pg, std({ color: 0x6b7078, metalness: 0.7, roughness: 0.4 }), post.length), mt = new THREE.Matrix4();
-      post.forEach(([i, s], k) => { const o = wallOff(T, s)(i) + s * (street ? 0.5 : 0.35); mt.makeTranslation(T.x[i] + T.nx[i] * o, fh / 2, T.z[i] + T.nz[i] * o); pm.setMatrixAt(k, mt); });
+      post.forEach(([i, s], k) => { const o = wallOff(T, s)(i) + s * (street ? 0.5 : 0.35); mt.makeTranslation(T.x[i] + T.nx[i] * o, fh / 2 + T.y[i], T.z[i] + T.nz[i] * o); pm.setMatrixAt(k, mt); });
       G.add(pm);
     }
     // start line, grid boxes
@@ -282,7 +300,7 @@ export function createWorld(canvas) {
     for (let g = 0; g < 10; g++) { const p = gridPose(T, g), fx = Math.cos(p.h), fz = Math.sin(p.h); G.add(flat(0.3, 2.8, white, p.x + fx * 2.9, p.z + fz * 2.9, p.h, 0.05)); G.add(flat(1.2, 0.3, white, p.x + fx * 2.3 - fz * 1.4, p.z + fz * 2.3 + fx * 1.4, p.h, 0.05)); G.add(flat(1.2, 0.3, white, p.x + fx * 2.3 + fz * 1.4, p.z + fz * 2.3 - fx * 1.4, p.h, 0.05)); }
     // DRS detection and activation lines + boards; braking boards
     const boardPost = std({ color: 0x444 }), boardMats = new Map(), boardMat = (tex) => boardMats.get(tex) || boardMats.set(tex, std({ map: tex, roughness: 0.6 })).get(tex);
-    const boardAt = (i, side, tex, d = 1.6) => { const o = wallOff(T, side)(i) - side * d, x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o; const b = new THREE.Group(); const pl = box(1.3, 1.3, 0.08, boardMat(tex)); pl.position.y = 1.55; b.add(pl); const pst = box(0.08, 1.0, 0.08, boardPost); pst.position.y = 0.5; b.add(pst); b.position.set(x, 0, z); b.rotation.y = -T.heading(i) - Math.PI / 2; G.add(b); };
+    const boardAt = (i, side, tex, d = 1.6) => { const o = wallOff(T, side)(i) - side * d, x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o; const b = new THREE.Group(); const pl = box(1.3, 1.3, 0.08, boardMat(tex)); pl.position.y = 1.55; b.add(pl); const pst = box(0.08, 1.0, 0.08, boardPost); pst.position.y = 0.5; b.add(pst); b.position.set(x, T.y[i], z); b.rotation.y = -T.heading(i) - Math.PI / 2; G.add(b); };
     for (const zz of T.drsZones) {
       G.add(flat(0.3, T.width, white, T.x[zz.det], T.z[zz.det], T.heading(zz.det), 0.05)); G.add(flat(0.3, T.width, decal({ color: 0x2fe37a, polygonOffsetFactor: -5, polygonOffsetUnits: -5 }), T.x[zz.a], T.z[zz.a], T.heading(zz.a), 0.05));
       boardAt(zz.det, 1, boards.det); boardAt(zz.a, -1, boards.drs); boardAt(zz.a, 1, boards.drs);
@@ -291,7 +309,7 @@ export function createWorld(canvas) {
     // marshal light panels: 3 per sector, on the outside
     for (let sct = 0; sct < 3; sct++) {
       const mat = new THREE.MeshBasicMaterial({ color: 0x0b2a14, toneMapped: false }); flagMats.push(mat);
-      for (let q = 0; q < 3; q++) { const i = Math.floor(((sct + (q + 0.5) / 3) / 3) * T.n), s = q % 2 ? 1 : -1, o = wallOff(T, s)(i) - s * 0.9; const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.8), mat); p.position.set(T.x[i] + T.nx[i] * o, 1.9, T.z[i] + T.nz[i] * o); p.lookAt(T.x[i] - T.tx[i] * 20, 1.9, T.z[i] - T.tz[i] * 20); G.add(p); const pst = box(0.1, 1.5, 0.1, std({ color: 0x333 })); pst.position.set(p.position.x, 0.75, p.position.z); G.add(pst); }
+      for (let q = 0; q < 3; q++) { const i = Math.floor(((sct + (q + 0.5) / 3) / 3) * T.n), s = q % 2 ? 1 : -1, o = wallOff(T, s)(i) - s * 0.9; const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.8), mat); p.position.set(T.x[i] + T.nx[i] * o, 1.9 + T.y[i], T.z[i] + T.nz[i] * o); p.lookAt(T.x[i] - T.tx[i] * 20, 1.9 + T.y[i], T.z[i] - T.tz[i] * 20); G.add(p); const pst = box(0.1, 1.5, 0.1, std({ color: 0x333 })); pst.position.set(p.position.x, 0.75 + T.y[i], p.position.z); G.add(pst); }
     }
     // start gantry with the five lights
     { const gx = T.x[0], gz = T.z[0], steel = std({ color: 0x23262d, roughness: 0.35, metalness: 0.8 }), span = T.width + 6;
@@ -419,7 +437,7 @@ export function createWorld(canvas) {
       for (let i = 0; i < n; i++) { const k = Math.abs(T.lk[i]); if (k < 0.007) continue; let peak = true; for (let j = -18; j <= 18 && peak; j++) if (j && Math.abs(T.lk[wrap(i + j, n)]) > k) peak = false; if (peak && (!ap.length || i - ap[ap.length - 1] > 30)) ap.push(i); }
       W.apexes = ap.map((i) => { const side = T.lk[i] > 0 ? 1 : -1, o = T.lo[i] + side * 1.6; return { i, x: T.x[i] + T.nx[i] * o, z: T.z[i] + T.nz[i] * o }; });
       const mk = new THREE.InstancedMesh(new THREE.ConeGeometry(0.28, 0.7, 10), new THREE.MeshBasicMaterial({ color: 0xff7a00, toneMapped: false }), Math.max(1, W.apexes.length)), mt2 = new THREE.Matrix4();
-      W.apexes.forEach((a, k) => { mt2.makeTranslation(a.x, 0.38, a.z); mk.setMatrixAt(k, mt2); }); mk.count = W.apexes.length; G.add(mk); W.apexMarks = mk;
+      W.apexes.forEach((a, k) => { mt2.makeTranslation(a.x, 0.38 + T.y[a.i], a.z); mk.setMatrixAt(k, mt2); }); mk.count = W.apexes.length; G.add(mk); W.apexMarks = mk;
     }
     // merge every static, single-material circuit mesh by material: hundreds of pieces become a few dozen draw calls
     { G.updateMatrixWorld(true); const keep = new Set([...lights, ...flagMats]), byMat = new Map(), drop = [];
@@ -481,7 +499,7 @@ export function createWorld(canvas) {
     if (!c || !on || !W.apexes?.length || !T) { apexRing.visible = false; return; }
     let best = null, bd = 1e9; for (const a of W.apexes) { const d = wrap(a.i - c.idx, T.n); if (d > 4 && d < bd) { bd = d; best = a; } }
     if (!best || bd * T.step > 450) { apexRing.visible = false; return; }
-    apexT += dt; const s2 = 1 + 0.18 * Math.sin(apexT * 7); apexRing.visible = true; apexRing.position.set(best.x, 0.06, best.z); apexRing.scale.set(s2, s2, s2);
+    apexT += dt; const s2 = 1 + 0.18 * Math.sin(apexT * 7); apexRing.visible = true; apexRing.position.set(best.x, 0.06 + T.y[best.i], best.z); apexRing.scale.set(s2, s2, s2);
   };
   W.setRacingLine = function (c, mode, prof, cls) {
     const T = W.T; if (!c || !mode || !T || !prof) { rline.visible = false; return; }
@@ -495,7 +513,7 @@ export function createWorld(canvas) {
       else if (mode === 1 && vi > cls.vtop * 0.97) a = 0;
       a *= clamp(k / 6, 0, 1) * clamp((RL - k) / 20, 0, 1);
       const o = T.lo[i], cx = T.x[i] + T.nx[i] * o, cz = T.z[i] + T.nz[i] * o;
-      rlPos.set([cx - T.nx[i] * 0.45, 0.04, cz - T.nz[i] * 0.45, cx + T.nx[i] * 0.45, 0.04, cz + T.nz[i] * 0.45], k * 6);
+      const ry = 0.04 + T.y[i]; rlPos.set([cx - T.nx[i] * 0.45, ry, cz - T.nz[i] * 0.45, cx + T.nx[i] * 0.45, ry, cz + T.nz[i] * 0.45], k * 6);
       rlCol.set([r, g, b, a, r, g, b, a], k * 8);
       i = wrap(i + stride, T.n); dist += stride * T.step;
     }
@@ -868,7 +886,8 @@ export function createWorld(canvas) {
 
   W.syncCar = function (id, c, dt) {
     const v = W.cars.get(id); if (!v) return;
-    v.g.position.set(c.x, 0.02 + (c.y || 0), c.z); v.g.rotation.y = -c.h;
+    const TT = W.T, ei = TT ? (c.idx ?? (v.hint = locate(TT, c.x, c.z, v.hint ?? 0))) : 0, ey = TT ? TT.y[ei] : 0; v.ey = ey;
+    v.g.position.set(c.x, 0.02 + (c.y || 0) + ey, c.z); v.g.rotation.y = -c.h;
     v.g.visible = !c.hidden;
     const sp = c.speed ?? Math.hypot(c.vx, c.vz), fx = Math.cos(c.h), fz = Math.sin(c.h), vf = c.vx * fx + c.vz * fz;
     v.spin -= (vf / v.wheelR) * dt;
@@ -876,7 +895,8 @@ export function createWorld(canvas) {
     const latG = (c.w || 0) * sp;
     v.roll += (clamp(latG * (v.classic ? 0.0045 : v.f1 ? 0.0012 : 0.0026), -0.075, 0.075) - v.roll) * Math.min(1, 9 * dt);
     v.pitch += (((c.brk || 0) * (v.f1 ? 0.018 : 0.04) - (c.thr || 0) * 0.016 * (sp < 45 ? 1 : 0.3)) - v.pitch) * Math.min(1, 8 * dt);
-    v.tilt.rotation.x = v.roll; v.tilt.rotation.z = v.pitch;
+    const slope = TT?.gy ? Math.atan(TT.gy[ei]) * Math.sign(Math.cos(c.h) * TT.tx[ei] + Math.sin(c.h) * TT.tz[ei]) : 0; // nose up the ramp
+    v.tilt.rotation.x = v.roll; v.tilt.rotation.z = v.pitch + slope;
     if (v.flap) { if (v.f1) { v.flap.rotation.z = c.drs ? 0.05 : -0.45; v.flap.position.y = c.drs ? 1.12 : 1.08; } else { v.flap.position.y = c.drs ? 0.99 : 1.06; v.flap.rotation.z = c.drs ? 0 : -0.35; } }
     if (v.ghost) return;
     v.brake?.material.color.setHex(c.brk > 0.1 ? 0xff1818 : 0x7a0000);
@@ -893,17 +913,17 @@ export function createWorld(canvas) {
         if (D.f > 0.28 && (D.l > 0.1 || D.f > 0.5)) detach(v, "epL", c); if (D.f > 0.28 && (D.rt > 0.1 || D.f > 0.5)) detach(v, "epR", c);
         if (D.f > 0.62) detach(v, "fwing", c); if (D.r > 0.6) detach(v, "rwing", c);
       }
-      if ((D.e > 0.5 || c.retired) && Math.random() < (c.retired ? 0.7 : 0.25)) W.puff(c.x - fx * 2.3, 0.9, c.z - fz * 2.3, c.retired ? 0x2a2a2a : 0x6a6a6a, c.retired ? 2.2 : 1.2);
+      if ((D.e > 0.5 || c.retired) && Math.random() < (c.retired ? 0.7 : 0.25)) W.puff(c.x - fx * 2.3, 0.9 + ey, c.z - fz * 2.3, c.retired ? 0x2a2a2a : 0x6a6a6a, c.retired ? 2.2 : 1.2);
     }
     // skid marks and tyre smoke
     const sliding = Math.max(c.slip > 0.3 ? c.slip : 0, c.brk > 0.95 && sp > 30 ? 0.35 : 0);
     if (sliding > 0 && sp > 6) {
       const rx = -fz, rz = fx, bx = c.x - fx * 1.5, bz = c.z - fz * 1.5, now = [bx + rx * 0.85, bz + rz * 0.85, bx - rx * 0.85, bz - rz * 0.85];
-      if (v.lastSkid && c.surf !== 2) { skidQuad(v.lastSkid[0], v.lastSkid[1], now[0], now[1], sliding); skidQuad(v.lastSkid[2], v.lastSkid[3], now[2], now[3], sliding); }
+      if (v.lastSkid && c.surf !== 2) { skidQuad(v.lastSkid[0], v.lastSkid[1], now[0], now[1], sliding, ey); skidQuad(v.lastSkid[2], v.lastSkid[3], now[2], now[3], sliding, ey); }
       v.lastSkid = now;
-      if (Math.random() < 0.5) W.puff(bx, 0.4, bz, c.surf === 2 ? 0xc9b58d : 0xe6e6e6, 0.5 + sliding);
+      if (Math.random() < 0.5) W.puff(bx, 0.4 + ey, bz, c.surf === 2 ? 0xc9b58d : 0xe6e6e6, 0.5 + sliding);
     } else v.lastSkid = null;
-    if (c.surf === 2 && sp > 12 && Math.random() < 0.5) W.puff(c.x - fx * 1.6, 0.4, c.z - fz * 1.6, W.T?.def.street ? 0x888888 : 0xbfae88, 0.9);
+    if (c.surf === 2 && sp > 12 && Math.random() < 0.5) W.puff(c.x - fx * 1.6, 0.4 + ey, c.z - fz * 1.6, W.T?.def.street ? 0x888888 : 0xbfae88, 0.9);
   };
 
   // ---------- skid marks (ring buffer; only the changed quad is uploaded) ----------
@@ -913,10 +933,10 @@ export function createWorld(canvas) {
   const skids = new THREE.Mesh(skGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -7, polygonOffsetUnits: -7, side: THREE.DoubleSide }));
   skids.frustumCulled = false; scene.add(skids);
   let skN = 0;
-  function skidQuad(x0, z0, x1, z1, a) {
+  function skidQuad(x0, z0, x1, z1, a, y = 0) {
     const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.01 || l > 6) return;
     const px = (-dz / l) * 0.17, pz = (dx / l) * 0.17, s = skN % SK, al = Math.min(0.55, 0.2 + a * 0.25);
-    skPos.set([x0 - px, 0.06, z0 - pz, x0 + px, 0.06, z0 + pz, x1 - px, 0.06, z1 - pz, x1 + px, 0.06, z1 + pz], s * 12);
+    const yy = 0.06 + y; skPos.set([x0 - px, yy, z0 - pz, x0 + px, yy, z0 + pz, x1 - px, yy, z1 - pz, x1 + px, yy, z1 + pz], s * 12);
     for (let k = 0; k < 4; k++) skCol.set([0.02, 0.02, 0.02, al], s * 16 + k * 4);
     skN++;
     skGeo.attributes.position.addUpdateRange(s * 12, 12); skGeo.attributes.color.addUpdateRange(s * 16, 16);
@@ -963,13 +983,14 @@ export function createWorld(canvas) {
   W.shake = (a) => { cam.shake = Math.max(cam.shake, a); };
   W.snapCamera = () => { cam.init = false; };
   W.updateCamera = function (c, mode, dt) {
+    if (W.freeCam) { const f = W.freeCam; camera.position.set(...f.pos); camera.fov = 55; camera.updateProjectionMatrix(); camera.lookAt(...f.look); sky.position.set(camera.position.x, 0, camera.position.z); return; } // test hook: a fixed camera
     let wantFov = 60, speedFx = 0, boostFx = 0;
     if (!c) {
       cam.orbit += dt * 0.05;
       camera.position.set(Math.sin(cam.orbit) * 430, 110 + Math.sin(cam.orbit * 0.7) * 30, Math.cos(cam.orbit) * 360 + 60); tmp2.set(0, 0, 0); wantFov = 48;
       aimSun(0, 0, 640); head.intensity = 0; cam.init = false; cam.fov = wantFov;
     } else {
-      const sp = c.speed || 0, y = c.y || 0, f1 = c.cls?.id !== "gt"; // single-seaters: low camera
+      const sp = c.speed || 0, y = (c.y || 0) + (W.T ? W.T.y[c.idx ?? 0] : 0), f1 = c.cls?.id !== "gt"; // single-seaters: low camera
       const vh = sp > 8 ? Math.atan2(c.vz, c.vx) : c.h;
       const target = c.h + clamp(angd(vh, c.h), -0.3, 0.3) * 0.2; // follow the nose, a hint of the slide
       if (!cam.init) { cam.h = target; cam.d = 7; cam.look = 0; }

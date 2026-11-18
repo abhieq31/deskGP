@@ -3,7 +3,7 @@
 import path from "node:path";
 const _pw = await import(process.env.PW || "playwright"), { chromium } = _pw.chromium ? _pw : _pw.default;
 const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
-const classes = ["gt", "f1", "classic"], N = +(process.env.N || 11);
+const classes = ["gt", "f1", "classic"], N = +(process.env.N || 12);
 let bad = 0;
 for (let t = 0; t < N; t++) {
   const cls = classes[t % 3], p = await b.newPage({ viewport: { width: 800, height: 450 } }), errs = [];

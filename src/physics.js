@@ -20,7 +20,7 @@ export function makeCar(id, cls = CLASSES.gt) {
     idx: 0, lat: 0, total: 0, offT: 0, y: 0, bump: 0, speed: 0, wrong: 0, respawned: 0,
     dmg: { f: 0, r: 0, l: 0, rt: 0, e: 0 }, hits: [], retired: false, tl: false,
     // driver settings and car state: active aero, brake bias, ERS mode, tyre temperatures (FL, FR, RL, RR, deg C)
-    aeroAuto: true, aeroReq: false, aeroOpen: false, bias: 0.56, ers: 1, tt: [72, 72, 70, 70], tg: [1, 1, 1, 1], overtake: false,
+    aeroAuto: true, aeroReq: false, aeroOpen: false, bias: 0.56, ers: 1, tt: [86, 86, 84, 84], tg: [1, 1, 1, 1], aeroK: 0, overtake: false,
   };
 }
 
@@ -78,7 +78,9 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const wasOpen = c.aeroOpen;
   c.aeroOpen = safe && (c.aeroAuto ? straightAhead : c.aeroReq);
   c.aeroFlip = c.aeroOpen !== wasOpen;
-  const aeroDF = c.aeroOpen ? 0.55 : 1;
+  // the flap moves over ~0.3 s, so grip and drag blend instead of jumping (no twitch when it opens or closes)
+  c.aeroK = clamp((c.aeroK || 0) + (c.aeroOpen ? dt : -2 * dt) / 0.3, 0, 1);
+  const aeroDF = 1 - 0.3 * c.aeroK;
   // tyres: grip depends on temperature (window 85-110 C); weight transfer under braking loads the front
   const tg = c.tg, tyreF = (tg[0] + tg[1]) / 2, tyreAll = (tg[0] + tg[1] + tg[2] + tg[3]) / 4;
   const front = (perf ? 1 - 0.3 * D.f : 1) * tyreF / Math.max(tyreAll, 0.5);
@@ -91,7 +93,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const hi = clamp(v / 85, 0, 1);
   if (inp.direct) { c.steer = st; c.thr = tIn; c.brk = bIn; }
   else {
-    const k = st === 0 ? 11 : st * c.steer < 0 ? 20 : 15 - 5 * hi;
+    const k = st === 0 ? 14 : st * c.steer < 0 ? 24 : 18 - 5 * hi;
     c.steer += (st - c.steer) * (1 - Math.exp(-k * dt));
     if (Math.abs(st - c.steer) < 0.003) c.steer = st;
     c.thr += clamp(tIn - c.thr, -12 * dt, 8 * dt); c.brk += clamp(bIn - c.brk, -14 * dt, 10 * dt);
@@ -113,13 +115,13 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const dir = vf >= 0 ? 1 : -1;
   // trail braking: brake pressure moves weight forward and the nose bites; a rearward brake bias rotates the car more;
   // throttle unloads the front (understeer on power)
-  const wt = 1 + brk * (0.12 + (0.58 - (c.bias ?? 0.56)) * 1.2) - thr * 0.06 * clamp(v / 30, 0, 1);
+  const wt = 1 + brk * (0.12 + (0.58 - (c.bias ?? 0.56)) * 1.2) ;
   const yawCap = Math.min(3.0, 1.0 * Gnom * front * wt / Math.max(v, 5)) * clamp(v / 2.5, 0, 1);
   const slipAng = Math.atan2(vl, Math.abs(vf) + 2);
   let wTarget = clamp(c.steer + pull, -1, 1) * yawCap * dir;
   wTarget += slipAng * 2.4 * clamp(v / 12, 0, 1) * clamp(c.sat * 4 - 3, 0, 1); // nose follows a slide back, near the limit only
   if (thr > 0.6 && v < 30 && c.surf !== 0) wTarget += c.steer * 0.3 * thr; // loose rear on kerbs and grass under power
-  c.w += (wTarget - c.w) * (1 - Math.exp(-(22 - 6 * hi) * dt)); // yaw inertia: heavier at speed
+  c.w += (wTarget - c.w) * (1 - Math.exp(-(19 + 4 * hi) * dt)); // yaw inertia: crisp at every speed
   c.h += c.w * dt;
 
   // longitudinal
@@ -127,7 +129,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const pmul = (c.boosting ? E.mult + (c.overtake ? 0.08 : 0) : 1) * (perf ? 1 - 0.35 * D.e : 1);
   if (thr > 0) acc += thr * Math.min(cls.traction * surfGrip, cls.power * pmul / Math.max(Math.abs(vf), 1));
   const regen = vf > 8 ? cls.regen * Math.max(0, 1 - thr * 6 - brk * 6) : 0; // lift-off regeneration / engine braking
-  const drag = cls.drag * (c.aeroOpen ? 0.72 : 1) * (1 - 0.35 * c.tow) * (perf ? 1 + 0.25 * D.f : 1) * v * v + extraDrag + 0.25 + regen;
+  const drag = cls.drag * (1 - 0.28 * c.aeroK) * (1 - 0.35 * c.tow) * (perf ? 1 + 0.25 * D.f : 1) * v * v + extraDrag + 0.25 + regen;
   const brakeA = brk * Math.min(cls.brake, G);
   if (inp.reverse && vf < 2 && !c.retired) acc = -6 * surfGrip;
   vf += acc * dt;
@@ -160,7 +162,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
       const P = Math.abs(ay) * c.speed / (cls.g0 * 40), Pb = brakeA * c.speed / (cls.g0 * 40);
       const heat = 1.45 * (2.6 * P * outer + 2.2 * Pb * (fr ? bias : 1 - bias) * 2 + 1.5 * a * drv[k] + 4 * Math.min(sl, 1));
       const T0 = c.tt[k]; c.tt[k] = T0 + (heat - (T0 - 28) * (0.035 + c.speed * 0.0004)) * dt * 0.6; // thermal mass: temperatures move over seconds, not instantly
-      const t = c.tt[k]; c.tg[k] = t < 85 ? Math.max(0.82, 1 - (85 - t) * 0.0055) : t > 110 ? Math.max(0.8, 1 - (t - 110) * 0.008) : 1;
+      const t = c.tt[k]; c.tg[k] = t < 85 ? Math.max(0.93, 1 - (85 - t) * 0.003) : t > 110 ? Math.max(0.9, 1 - (t - 110) * 0.004) : 1;
     }
   }
 

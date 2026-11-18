@@ -5,12 +5,13 @@
 //  3. If a pair cannot connect directly (strict office firewall), their messages fall back to the relays at a lower rate.
 import { schnorr } from "@noble/curves/secp256k1.js";
 
-const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net", "wss://offchain.pub"];
+// checked: these pass ephemeral events between two connections. Six, so a couple being down never matters.
+const DEFAULT_RELAYS = ["wss://nos.lol", "wss://relay.primal.net", "wss://offchain.pub", "wss://nostr.mom", "wss://relay.snort.social", "wss://relay.damus.io"];
 const RELAYS = (() => {
   try { const c = JSON.parse(localStorage.getItem("deskgp:relays") || "null"); if (Array.isArray(c) && c.length && c.every((u) => /^wss?:\/\//.test(u))) return c; } catch {}
   return DEFAULT_RELAYS;
 })();
-const KIND = 21078; // ephemeral: relays pass it on and do not store it
+const KIND = 21078; // ephemeral: relays pass it on and do not store it, so a wide "since" (for clock skew) replays nothing
 const ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -44,7 +45,7 @@ export function createNet(code, me, handlers, opts = {}) {
     if (N.closed) return;
     let ws; try { ws = new WebSocket(url); } catch { return retry(url, attempt); }
     sockets.set(url, ws);
-    ws.onopen = () => { attempt = 0; ws.send(JSON.stringify(["REQ", "gp", { kinds: [KIND], authors: [pubkey], since: Math.floor(Date.now() / 1000) - 5 }])); status(); hello(); };
+    ws.onopen = () => { attempt = 0; ws.send(JSON.stringify(["REQ", "gp", { kinds: [KIND], authors: [pubkey], since: Math.floor(Date.now() / 1000) - 900 }])); status(); hello(); };
     ws.onmessage = (m) => relayMsg(m.data);
     ws.onclose = () => { if (sockets.get(url) === ws) sockets.delete(url); status(); retry(url, attempt + 1); };
     ws.onerror = () => { try { ws.close(); } catch {} };

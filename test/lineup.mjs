@@ -1,6 +1,6 @@
 // Screenshots of the pre-race lineup, the race with the new cars, and the podium board.
 import path from "node:path";
-const { chromium } = await import(process.env.PW || "playwright");
+const _pw = await import(process.env.PW || "playwright"), { chromium } = _pw.chromium ? _pw : _pw.default;
 const out = process.argv[2] || ".", tr = +(process.argv[3] || 0), cls = process.argv[4] || "f1";
 const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 const p = await b.newPage({ viewport: { width: 1366, height: 768 } }); p.setDefaultTimeout(240000);

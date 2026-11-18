@@ -1,6 +1,6 @@
 // One high-quality still per circuit/class: start a solo race, let the autopilot drive, grab frames.
 import path from "node:path";
-const { chromium } = await import(process.env.PW || "playwright");
+const _pw = await import(process.env.PW || "playwright"), { chromium } = _pw.chromium ? _pw : _pw.default;
 const [out, tr = "0", cls = "gt", gfx = "2", cams = "0"] = process.argv.slice(2);
 const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 const p = await b.newPage({ viewport: { width: 1280, height: 720 } });

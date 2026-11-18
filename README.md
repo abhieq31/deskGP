@@ -51,7 +51,7 @@ node test/feel.mjs  # how fast the car responds to a key press
 
 Source is in `src/`: `track.js` (circuits, racing line, speed profiles, barriers), `layout.js` (where scenery may go), `physics.js` (car model, damage), `ai.js` (AI drivers), `world.js` (three.js scene, cars, post-processing), `net.js` (relays + WebRTC), `audio.js` (synthesised sound), `main.js` (sporting rules, lobby, HUD).
 
-Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Team, driver and sponsor names are set in plain lettering as a tribute (no logos); DeskGP has no affiliation with, and is not endorsed by, Formula 1, any team or any sponsor.
+Driver and circuit names are used as a tribute; DeskGP is a fan project with no connection to Formula 1, its teams, drivers or circuits. Team and driver names are set in plain lettering as a tribute (no logos); DeskGP has no affiliation with, and is not endorsed by, Formula 1, any team or any sponsor.
 
 ## Licence
 

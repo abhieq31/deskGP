@@ -18,7 +18,5 @@ for (const t of TEAMS) t.second = [];
 export const teamOf = (id) => TEAMS.find((t) => t.id === id) || TEAMS[0];
 // every driver on the grid: [name, code, number, team id]
 export const GRID_DRIVERS = TEAMS.flatMap((t) => t.drivers.map(([n, c, num]) => [n, c, num, t.id]));
-// trackside boards keep the tech sponsors
-export const BOARD_SPONSORS = ["NVIDIA", "GOOGLE", "AMAZON", "APPLE", "META", "TESLA", "SPACEX", "SHOPIFY", "RELIANCE", "JIO", "JIOMART", "AJIO", "RELIANCE DIGITAL", "TATA", "MAHINDRA", "TATA MOTORS"];
 // colour for timing bars and labels: near-black or pale liveries use the accent so they stay visible on dark UI
 export const uiColor = (t) => { const h = t.body.replace("#", ""), r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return 0.3 * r + 0.59 * g + 0.11 * b < 60 ? t.accent : t.body; };

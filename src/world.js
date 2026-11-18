@@ -29,8 +29,6 @@ const MOODS = {
   sunset: { top: "#232a63", mid: "#ef855a", low: "#ffd28c", hill: "#5a3d55", fog: 0xe3a37a, fogD: 0.0007, sun: 0xffa055, sunI: 3.4, sunDir: [0.75, 0.3, -0.4], hemiS: 0xb9a0e0, hemiG: 0x6a4a34, hemiI: 0.8, exp: 1.0, grass: "#6a8238", grass2: "#5e7631", hillCol: 0x8a7a45 },
   night: { top: "#02040a", mid: "#0a1226", low: "#1c2746", hill: "#0a0f1c", fog: 0x0b1222, fogD: 0.0009, sun: 0xdfe8ff, sunI: 1.6, sunDir: [-0.2, 0.95, 0.25], hemiS: 0x7086c0, hemiG: 0x1c2018, hemiI: 0.8, exp: 1.1, grass: "#243f27", grass2: "#1f3822", hillCol: 0x1e3322 },
 };
-import { BOARD_SPONSORS } from "./teams.js";
-const BRANDS = BOARD_SPONSORS;
 
 // ---------- post-processing: speed blur, chromatic kick under boost, grade, vignette ----------
 const FinalShader = {
@@ -91,12 +89,14 @@ export function createWorld(canvas) {
   const runoffTex = canvasTex(64, 256, (g, w, h) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? "#2556a8" : "#c4212b"; g.fillRect(0, i * 32, w, 32); } g.fillStyle = "rgba(0,0,0,.18)"; for (let i = 0; i < 1200; i++) g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }, { repeat: [1, 1] });
   const wallTex = canvasTex(1024, 64, (g, w, h) => {
     g.fillStyle = "#e9ebee"; g.fillRect(0, 0, w, h);
-    const cols = ["#d21f26", "#1d4ed8", "#111318", "#f59e0b", "#0f8a5f", "#6d28d9", "#111318", "#e11d48"];
-    for (let i = 0; i < 8; i++) { g.fillStyle = cols[i]; g.fillRect(i * 128 + 6, 8, 116, 48); g.fillStyle = "#fff"; g.font = "italic 900 26px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(BRANDS[i], i * 128 + 64, 33, 104); }
+    // clean circuit barrier, no advertising: white panels, a dark kick strip and a thin red line
+    for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? "#f4f5f7" : "#e3e6ea"; g.fillRect(i * 128, 0, 128, h); }
+    g.fillStyle = "#1a1d23"; g.fillRect(0, h - 14, w, 14); g.fillStyle = "#d21f26"; g.fillRect(0, 6, w, 4);
+    g.fillStyle = "rgba(20,24,30,.55)"; g.font = "italic 900 24px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("DESKGP", 256, 30); g.fillText("DESKGP", 768, 30);
   }, { repeat: [1, 1], aniso: 16 });
   const concreteTex = canvasTex(512, 64, (g, w, h) => {
     g.fillStyle = "#b9bcc1"; g.fillRect(0, 0, w, h); for (let i = 0; i < 4000; i++) { const v = rnd(150, 210); g.fillStyle = `rgba(${v},${v},${v},.5)`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
-    for (let i = 0; i < 4; i++) { g.fillStyle = ["#d21f26", "#111318", "#1d4ed8", "#f59e0b"][i]; g.fillRect(i * 128 + 4, 14, 120, 36); g.fillStyle = "#fff"; g.font = "italic 900 22px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(BRANDS[i + 6], i * 128 + 64, 33, 110); }
+    for (let i = 0; i < 16; i++) { g.fillStyle = i % 2 ? "#f1f1ec" : "#c4212b"; g.fillRect(i * 32, 0, 32, 8); } // red and white band, nothing to read
     g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(0, h - 5, w, 5); g.fillRect(126, 0, 3, h);
   }, { repeat: [1, 1], aniso: 16 });
   const fenceTex = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = "rgba(200,205,210,0.75)"; g.lineWidth = 1.5; for (let i = -64; i < 128; i += 8) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 64, 64); g.stroke(); g.beginPath(); g.moveTo(i + 64, 0); g.lineTo(i, 64); g.stroke(); } }, { repeat: [1, 1] });
@@ -352,7 +352,6 @@ export function createWorld(canvas) {
         G.add(hull, deck);
       }
       const signs = night ? cells[2].slice(0, 14) : [];
-      signs.forEach(([x, z, w, d, h], i) => { const t = canvasTex(256, 64, (g, cw, ch) => { g.fillStyle = "#000"; g.fillRect(0, 0, cw, ch); g.fillStyle = ["#ff2d55", "#00e5ff", "#ffd60a", "#7cff4f"][i % 4]; g.font = "italic 900 40px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(BRANDS[i % BRANDS.length], cw / 2, ch / 2); }); const s = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.9, w * 0.22), new THREE.MeshBasicMaterial({ map: t, toneMapped: false, side: THREE.DoubleSide })); s.position.set(x, h + w * 0.14, z); s.rotation.y = Math.atan2(-x, -z); G.add(s); });
       const water = new THREE.Mesh(new THREE.PlaneGeometry(8000, 4000), std({ color: night ? 0x0a1628 : 0x1d5f86, roughness: 0.08, metalness: 0.8, envMapIntensity: 1.2 })); water.rotation.x = -Math.PI / 2; water.position.set(0, -0.15, T.box.hz + 80 + 2000); G.add(water);
       // street lights along the circuit
       const lp = []; for (let i = 0; i < T.n; i += 18) for (const s of [-1, 1]) lp.push([i, s]);
@@ -391,20 +390,6 @@ export function createWorld(canvas) {
         else { mt.compose(new V3(x, y + 6.4 * s, z), q.setFromEuler(new THREE.Euler(0, rnd(0, 6), 0)), sc.set(s, s * rnd(1.1, 1.6), s)); crown.setMatrixAt(nc, mt); crown.setColorAt(nc++, col.setScalar(rnd(0.75, 1.1))); } });
       crown.count = nc; pine.count = np;
       trunk.castShadow = crown.castShadow = pine.castShadow = W.quality > 1; W.treeMeshes = [trunk, crown, pine]; crown.receiveShadow = true; G.add(trunk, crown, pine);
-    }
-    // sponsor bridges over the straights (pillars checked clear of every stretch of track)
-    { const steel = std({ color: 0x2b2e35, roughness: 0.4, metalness: 0.7 }); let last = -999, made = 0;
-      const tryAt = (i) => {
-        const wp = T.wp[i] + 1.2, wm = T.wm[i] + 1.2, A = [T.x[i] + T.nx[i] * wp, T.z[i] + T.nz[i] * wp], Bp = [T.x[i] - T.nx[i] * wm, T.z[i] - T.nz[i] * wm];
-        if (T.dist(A[0], A[1]) < wp - 0.6 || T.dist(Bp[0], Bp[1]) < wm - 0.6) return false;
-        const name = BRANDS[(made * 5 + 3) % BRANDS.length], span = wp + wm, h0 = 7.5;
-        const tex = canvasTex(1024, 128, (g, w, h) => { g.fillStyle = "#0d0f13"; g.fillRect(0, 0, w, h); g.fillStyle = "#ffffff"; g.font = "italic 900 92px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(name, w / 2, h / 2 + 4, w - 40); g.fillStyle = "#e10600"; g.fillRect(0, h - 8, w, 8); }, { aniso: 8 });
-        const br = new THREE.Group(), face = std({ map: tex, roughness: 0.5, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: W.night ? 0.6 : 0.08 });
-        const beam = box(span, 2.2, 0.9, [steel, steel, steel, steel, face, face]); beam.position.set(0, h0 + 1.1, 0); br.add(beam);
-        for (const sx of [-1, 1]) { const p = box(0.8, h0, 0.8, steel); p.position.set(sx * span / 2, h0 / 2, 0); br.add(p); }
-        br.position.set((A[0] + Bp[0]) / 2, 0, (A[1] + Bp[1]) / 2); br.rotation.y = -T.heading(i) + Math.PI / 2; G.add(br); made++; return true;
-      };
-      for (let i = 120; i < T.n - 80 && made < 3; i += 4) { if (i - last < T.n / 4.5) continue; let st = true; for (let j = -25; j <= 25; j += 5) if (Math.abs(T.k[wrap(i + j, T.n)]) > 0.0016) { st = false; break; } if (st && tryAt(i)) last = i; }
     }
     // TV camera towers at the big corners
     { const scaf = std({ color: 0x9aa0a8, roughness: 0.6, metalness: 0.5 }), camM = std({ color: 0x111316, roughness: 0.4 }); let made = 0, last = -999;
@@ -982,7 +967,8 @@ export function createWorld(canvas) {
   let frames = 0, win = 0, winN = 0;
   W.resize = function () {
     const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight, dpr = devicePixelRatio || 1;
-    const pr = W.quality === 2 ? Math.min(dpr, 1.6) : W.quality === 1 ? Math.min(dpr, 1.5) : Math.min(dpr, 1);
+    const pr0 = W.quality === 2 ? Math.min(dpr, 1.6) : W.quality === 1 ? Math.min(dpr, 1.5) : Math.min(dpr, 1);
+    const pr = pr0;
     renderer.setPixelRatio(pr); renderer.setSize(w, h, false); composer.setPixelRatio(pr); composer.setSize(w, h);
     bloom.resolution.set(w / 2, h / 2);
     camera.aspect = w / h; camera.updateProjectionMatrix();
@@ -992,11 +978,15 @@ export function createWorld(canvas) {
     stepParticles(dt); stepDebris(dt);
     final.uniforms.uSpeed.value = W.speedFx; final.uniforms.uBoost.value = W.boostFx;
     if (W.lineup) { renderLineup(dt); return; }
+    if (W.lite) { liteAcc += dt; if (liteAcc < 1 / 24) return; liteAcc = 0; }
     if (W.quality === 2) composer.render(dt); else renderer.render(scene, camera);
     // Auto quality only ever steps down, once, after a sustained slow stretch: no back-and-forth resizes.
     frames++;
     if (W.auto && frames > 180 && dt < 0.25) { win += dt; winN++; if (winN >= 150) { const avg = win / winN; win = 0; winN = 0; if (avg > 0.022 && W.quality > 0) { W.quality--; applyQuality(); W.onQuality?.(W.quality); } } }
   };
+  // behind menus the backdrop only needs ~24 fps: leaves the GPU free so clicks answer at once (no buffer resize, which stalls)
+  W.setLite = (on) => { W.lite = on; };
+  let liteAcc = 0;
   addEventListener("resize", W.resize);
   applyQuality();
   return W;

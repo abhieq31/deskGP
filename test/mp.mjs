@@ -1,7 +1,7 @@
 // Two (or more) browsers race each other. MODE=local: same browser context (BroadcastChannel + WebRTC).
 // MODE=relay: separate contexts, so they can only find each other through the public relays.
 import path from "node:path";
-const { chromium } = await import(process.env.PW || "playwright");
+const _pw = await import(process.env.PW || "playwright"), { chromium } = _pw.chromium ? _pw : _pw.default;
 const out = process.argv[2] || ".", mode = process.env.MODE || "local", N = +(process.env.N || 2);
 const url = "file://" + path.resolve("deskgp.html");
 const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", ...(process.env.NORTC ? ["--disable-features=WebRtc", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"] : [])] });

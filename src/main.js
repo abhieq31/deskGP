@@ -144,6 +144,7 @@ function show(name) {
   for (const id of ["menu", "lobby", "results"]) $("#" + id).hidden = id !== name;
   $("#hud").hidden = name !== "race"; $("#pause").hidden = true; S.paused = false;
   if (name === "menu") renderMenu();
+  world.setLite(name === "menu" || name === "lobby");
 }
 function setPaused(p) {
   S.paused = p; $("#pause").hidden = !p;
@@ -193,6 +194,12 @@ function renderMenu() {
   $("#colors").innerHTML = TEAMS.map((t) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="background:${t.body};color:${t.ink};border-color:${t.id === prefs.team ? "#fff" : t.accent}" aria-label="${t.name}">${esc(t.short || t.name)}</button>`).join("");
   $("#career").textContent = prefs.races ? `${rankOf(prefs.xp)} · ${prefs.xp} points · ${prefs.wins} win${prefs.wins === 1 ? "" : "s"} from ${prefs.races} starts` : "";
   const hc = parseRoomCode(location.hash); if (hc) $("#code").value = formatRoomCode(hc);
+  // opened from an invite link: the one thing to do is join, so make that the obvious button
+  $("#menu").classList.toggle("invited", !!hc);
+  $("#join").classList.toggle("primary", !!hc); $("#solo").classList.toggle("primary", !hc);
+  $("#join").textContent = hc ? `Join ${formatRoomCode(hc)}` : "Join";
+  $("#menu .tag").textContent = hc ? `You are invited to room ${formatRoomCode(hc)}. Pick a name and team, then press Join.` : "Lights out and away we go.";
+  if (hc) $(".joinrow").after($(".btns")); else $(".joinrow").before($(".btns"));
   const ch = S.challenge, box = $("#chal"), ti = ch ? TRACKS.findIndex((d) => d.id === ch.track) : -1;
   box.hidden = !(ch && ti >= 0);
   if (ch && ti >= 0) box.querySelector("span").textContent = `${ch.name} challenges you: ${fmt(ch.t)} at ${TRACKS[ti].name} (${CLASSES[ch.cls]?.name || "car"}). Beat that lap.`;
@@ -348,9 +355,16 @@ function onMsg(from, m) {
 
 // ---------- race ----------
 function endRace() { S.race = null; world.clearCars(); world.setRacingLine(null); $("#interval").hidden = true; $("#rc").hidden = true; }
+// The backdrop circuit. Rebuilding a circuit takes a moment, so it never runs inside a click: the screen
+// paints first, then it rebuilds (and only the latest request runs).
+let demoTok = 0;
 function startDemo(force) {
+  const tok = ++demoTok;
+  requestAnimationFrame(() => setTimeout(() => { if (tok === demoTok) demoNow(force); }, 0));
+}
+function demoNow(force) {
   if (S.race && !S.race.demo) return;
-  const ti = S.room ? S.room.cfg.track : Math.floor(Math.random() * TRACKS.length), cls = S.room ? S.room.cfg.cls : "gt";
+  const c0 = S.room ? S.room.cfg : defaultCfg(), ti = c0.track, cls = c0.cls || "gt";
   if (!force && S.race?.demo && S.race.T === built[ti] && S.race.cls.id === cls) return;
   const grid = DRIVERS.slice(0, 6).map((d, i) => ({ id: "demo" + i, name: d[0], team: d[4], color: uiColor(teamOf(d[4])), num: d[3], kind: "b", skill: 0.88 + i * 0.012, seed: Math.random() }));
   startRace({ mode: "race", at: netNow() - 9000, hold: 0, cfg: { track: ti, laps: 9999, cls, dmg: 1 }, grid, n: -1 }, true);
@@ -973,4 +987,5 @@ function frame(t) {
 world.onDetach = (id) => { if (S.race?.mine?.id === id) audio.fx("part"); };
 
 show("menu"); startDemo();
+addEventListener("hashchange", () => { if (S.screen === "menu") renderMenu(); });
 requestAnimationFrame(frame);

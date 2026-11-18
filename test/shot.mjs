@@ -1,6 +1,6 @@
 // Drives the built game in headless Chromium and saves screenshots.
 import fs from "node:fs"; import path from "node:path";
-const { chromium } = await import(process.env.PW || "playwright");
+const _pw = await import(process.env.PW || "playwright"), { chromium } = _pw.chromium ? _pw : _pw.default;
 const out = process.argv[2] || "."; const url = "file://" + path.resolve("deskgp.html");
 const b = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 const p = await b.newPage({ viewport: { width: 1280, height: 720 } });

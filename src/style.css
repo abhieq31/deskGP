@@ -336,11 +336,3 @@ button.link:hover{color:#fff;background:none}
 .hero canvas{aspect-ratio:3/1}
 @media(max-height:760px){#colors .team svg{max-width:62px}.home .tag{margin:4px 0 10px}.fine{display:none}#trkblurb{display:none}.cars button svg{max-width:80px}.cars button{padding:6px 8px}}
 .rr{grid-template-columns:38px 20px 1fr auto auto auto 54px}.rr .crest{display:block}
-.daily{display:flex;align-items:center;gap:10px;text-align:left;padding:10px 14px;border-radius:14px;background:linear-gradient(90deg,rgba(255,214,10,.12),rgba(255,214,10,.03));border-color:rgba(255,214,10,.35)}
-.daily .dl{display:flex;flex-direction:column;flex:1;min-width:0}
-.daily b{font-size:14.5px}.daily small{color:var(--dim);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.daily em{font-style:normal;font-family:var(--mono);font-weight:800;color:var(--yellow);font-size:14px;white-space:nowrap}
-@media(max-height:700px){.home .tag{display:none}.daily{padding:7px 12px}.driver{margin-bottom:8px}.brand .mark{width:44px;height:44px}.logo{font-size:38px}}
-@media(max-height:700px){#colors .team > svg{display:none}#colors .team{flex-direction:row;gap:5px;padding:5px 6px;justify-content:center}#colors .team .tc{position:static}}
-@media(max-height:700px){#colors .team span:last-child{text-transform:none;letter-spacing:0;font-size:11px}#colors{gap:5px}}
-@media(max-height:700px){#colors .team span:last-child{font-size:10.5px}#colors .team{gap:4px;padding:5px 4px}#colors .team .tc svg{width:15px;height:15px}}

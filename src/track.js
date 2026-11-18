@@ -86,8 +86,7 @@ export function buildTrack(def) {
   T.y = new Float32Array(n); T.gy = null; T.cross = null;
   if (def.crossover) {
     let best = Infinity, bi = 0, bj = 0;
-    for (let i = 0; i < n; i += 4) for (let j = i + 150; j < n; j += 4) { if (n - j + i < 150) continue; const d = (x[i] - x[j]) ** 2 + (z[i] - z[j]) ** 2; if (d < best) { best = d; bi = i; bj = j; } } // coarse
-    const ci = bi, cj = bj; for (let i = ci - 4; i <= ci + 4; i++) for (let j = cj - 4; j <= cj + 4; j++) { const a = wrap(i, n), b = wrap(j, n), d = (x[a] - x[b]) ** 2 + (z[a] - z[b]) ** 2; if (d < best) { best = d; bi = a; bj = b; } } // then exact
+    for (let i = 0; i < n; i++) for (let j = i + 150; j < n; j++) { if (n - j + i < 150) continue; const d = (x[i] - x[j]) ** 2 + (z[i] - z[j]) ** 2; if (d < best) { best = d; bi = i; bj = j; } }
     const up = def.crossover === "first" ? bi : bj, low = up === bi ? bj : bi;
     const sinA = Math.abs(T.tx[up] * T.tz[low] - T.tz[up] * T.tx[low]);
     // the deck spans the lower road and its run-off on both sides; then 160 m ramps (about 6% at the steepest)
@@ -104,26 +103,17 @@ export function buildTrack(def) {
   T.apart = (i, j) => Math.abs(T.y[i] - T.y[j]) > 3;
 
   // Racing line: minimise curvature of the offset path inside the track limits.
-  // (Gauss-Seidel on flat arrays: the same maths as a per-point closure, ~10x faster; stops once it has converged)
   const C = 4, cn = Math.floor(n / C), lim = T.half - 1.7;
-  const off = new Float32Array(cn), bx = new Float64Array(cn), bz = new Float64Array(cn), bnx = new Float64Array(cn), bnz = new Float64Array(cn), PX = new Float64Array(cn), PZ = new Float64Array(cn);
-  for (let j = 0; j < cn; j++) { const q = j * C; bx[j] = PX[j] = x[q]; bz[j] = PZ[j] = z[q]; bnx[j] = T.nx[q]; bnz[j] = T.nz[q]; }
-  // precomputed when the circuits are generated (tools/make-circuits.mjs): nothing to solve in the browser
-  const pre = def.rl && def.rl.length === cn;
-  if (pre) for (let j = 0; j < cn; j++) off[j] = def.rl[j] / 100;
-  for (let it = 0; it < (pre ? 0 : 2500); it++) {
-    let md = 0;
+  const off = new Float32Array(cn);
+  const px = (j) => x[j * C] + T.nx[j * C] * off[j], pz = (j) => z[j * C] + T.nz[j * C] * off[j];
+  for (let it = 0; it < 2500; it++) {
     for (let j = 0; j < cn; j++) {
-      const a = j > 0 ? j - 1 : cn - 1, b = j < cn - 1 ? j + 1 : 0, a2 = j > 1 ? j - 2 : j + cn - 2, b2 = j < cn - 2 ? j + 2 : j + 2 - cn;
-      const gx = (4 * (PX[a] + PX[b]) - (PX[a2] + PX[b2])) / 6, gz = (4 * (PZ[a] + PZ[b]) - (PZ[a2] + PZ[b2])) / 6;
-      const o = (gx - bx[j]) * bnx[j] + (gz - bz[j]) * bnz[j], prev = off[j];
-      off[j] += ((o < -lim ? -lim : o > lim ? lim : o) - prev) * 0.6;
-      const dd = Math.abs(off[j] - prev); if (dd > md) md = dd;
-      PX[j] = bx[j] + bnx[j] * off[j]; PZ[j] = bz[j] + bnz[j] * off[j];
+      const a = wrap(j - 1, cn), b = wrap(j + 1, cn), a2 = wrap(j - 2, cn), b2 = wrap(j + 2, cn);
+      const gx = (4 * (px(a) + px(b)) - (px(a2) + px(b2))) / 6, gz = (4 * (pz(a) + pz(b)) - (pz(a2) + pz(b2))) / 6;
+      const o = (gx - x[j * C]) * T.nx[j * C] + (gz - z[j * C]) * T.nz[j * C];
+      off[j] += (Math.max(-lim, Math.min(lim, o)) - off[j]) * 0.6;
     }
-    if (md < 1e-4 && it > 100) break;
   }
-  T._off = off; // (read by the circuit generator)
   let lo = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const j = Math.floor(i / C), fr = (i - j * C) / C;

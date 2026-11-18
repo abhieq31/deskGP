@@ -284,7 +284,7 @@ export function createWorld(canvas) {
       G.add(flat(0.3, T.width, white, T.x[zz.det], T.z[zz.det], T.heading(zz.det), 0.05)); G.add(flat(0.3, T.width, decal({ color: 0x2fe37a, polygonOffsetFactor: -5, polygonOffsetUnits: -5 }), T.x[zz.a], T.z[zz.a], T.heading(zz.a), 0.05));
       boardAt(zz.det, 1, boards.det); boardAt(zz.a, -1, boards.drs); boardAt(zz.a, 1, boards.drs);
     }
-    if (prof?.brakeAt) for (const b of prof.brakeAt) { const side = T.k[wrap(b + 40, T.n)] > 0 ? -1 : 1; for (const d of [150, 100, 50]) boardAt(wrap(b - d / T.step, T.n), side, boards[d]); }
+    if (prof?.brakeAt) for (const b of prof.brakeAt) { const side = T.k[wrap(b + 40, T.n)] > 0 ? -1 : 1; for (const d of [150, 100, 50]) boardAt(wrap(b - Math.round(d / T.step), T.n), side, boards[d]); }
     // marshal light panels: 3 per sector, on the outside
     for (let sct = 0; sct < 3; sct++) {
       const mat = new THREE.MeshBasicMaterial({ color: 0x0b2a14, toneMapped: false }); flagMats.push(mat);

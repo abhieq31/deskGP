@@ -255,3 +255,14 @@ kbd{font-family:var(--mono);font-size:12px;background:#1d2230;border:1px solid #
 #menu.invited .tag{display:block!important}
 .joinrow button{white-space:nowrap;flex:none;min-width:120px}
 .trk b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ty.lock{animation:lockb .18s steps(2) infinite}@keyframes lockb{50%{background:#fff!important;color:#000}}
+#dials small#dl-bbw{color:#cfd4dc;font-weight:800;letter-spacing:.06em}
+#mapwrap{background:transparent;border:0;padding:0;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))}
+/* team picker: miniature cars in livery */
+#colors{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+#colors .team{width:auto;height:auto;border-radius:10px;padding:5px 4px 4px;border:1px solid var(--line);background:rgba(255,255,255,.04);display:flex;flex-direction:column;align-items:center;gap:1px;transform:none;color:#d6dbe3;font-style:normal;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;outline:0}
+#colors .team svg{width:100%;max-width:92px;height:auto;display:block}
+#colors .team span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+#colors .team:hover{background:rgba(255,255,255,.09)}
+#colors .team.on{border-color:var(--tc);background:color-mix(in srgb,var(--tc) 22%,transparent);color:#fff;box-shadow:0 0 0 1px var(--tc) inset}
+@media(max-height:760px){#colors .team{padding:3px 3px 2px}#colors .team svg{max-width:76px}}

@@ -6,9 +6,9 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 
 ## What is in it
 
-- **Five real Grand Prix circuits** from their actual centrelines at full scale, each in its own setting: Monza (royal park), Silverstone (open airfield), Spa-Francorchamps (Ardennes forest and hills), Monaco (harbour, yachts, Riviera streets) and Interlagos (inside the São Paulo skyline).
+- **Five real Grand Prix circuits** from their actual centrelines at full scale, each in its own setting: Monza (royal park), Silverstone (open airfield), Spa-Francorchamps (Ardennes forest and hills), the Red Bull Ring (Styrian mountains, pine forest and snow-capped peaks) and Interlagos (inside the São Paulo skyline).
 - **Planted, realistic car feel**: the wheel asks for a yaw rate the tyres can hold at that speed, grip builds from slip, and downforce adds grip with speed. Real power, drag and braking: the Electric GT does 0-100 km/h in 2.3 s and stops from 200 km/h in 96 m; the Formula car pulls 4 g at 290 km/h and stops from 200 km/h in 62 m.
-- **2026-style cornering system**: active aero that opens in Straight Mode and snaps to Corner Mode when you brake or turn (automatic, or manual with F), with a flap sound and HUD badge. Trail braking moves weight forward for more front grip; adjustable brake bias; four tyre temperatures with an 85-110 °C grip window; three ERS modes; Overtake mode (extra energy) when you are within a second at the detection line.
+- **2026-style cornering system**: active aero that opens in Straight Mode and snaps to Corner Mode when you brake or turn (automatic, or manual with F), with a flap sound and HUD badge. Trail braking moves weight forward for more front grip; brake bias that changes how the car behaves (rearward rotates it into corners and can slide it, forward locks the front tyres and understeers, with smoke and engineer advice); four tyre temperatures with an 85-110 °C grip window; three ERS modes; Overtake mode (extra energy) when you are within a second at the detection line.
 - **Cockpit HUD and engineer**: a steering wheel you can drag to steer, throttle and brake pedal bars, tyre temperature and grip gauge, dials for brake bias, ERS and aero. The racing line is coloured green, yellow or red by braking need, apex cones sit at every corner with a ring on the next one, and a race engineer talks over radio (spoken and on screen): gaps each lap, tyre temperatures, battery, defending.
 - **Skill that shows**: brake in a straight line, turn in, feed the throttle as you unwind. Every lap shows the gap to your all-time best; cut laps do not count as records; sector times go purple, green or yellow. Skill points (places gained, overtakes, clean laps, starts, records) build your career.
 - **Race like the broadcasts**: five-light start, live timing tower with real gaps, an interval board after each sector, Overtake mode on the straights, chequered flag, F1 points, and a classification screen with your race summary.
@@ -25,14 +25,14 @@ Grand Prix racing in the browser. Race friends with a room code, or a full AI gr
 | Drive | WASD or arrow keys (gamepad and touch also work) |
 | ERS boost | Space or Shift |
 | Aero flap (manual) / auto aero | F / T |
-| Brake bias / ERS mode | [ and ] / E |
+| Brake bias (rearward / forward) / ERS mode | [ and ] / E |
 | HUD full or minimal / engineer voice | V / K |
 | Camera | C (chase, far chase, onboard, TV) |
 | Back on track | R |
 | Mute | M |
 | Emotes | 1 to 4 |
 | Pause (pauses everyone if you are the host) / graphics | Esc |
-| Controls card | H |
+| Controls card | B or H |
 
 ## How multiplayer works
 

@@ -27,6 +27,7 @@ const std = (o) => new THREE.MeshStandardMaterial(o);
 const MOODS = {
   day: { top: "#2f78d0", mid: "#9cc6ee", low: "#e3edf4", hill: "#6d8c78", fog: 0xcad9e6, fogD: 0.00055, sun: 0xfff0d2, sunI: 3.2, sunDir: [-0.45, 0.8, 0.4], hemiS: 0xcfe2ff, hemiG: 0x5c6b46, hemiI: 0.9, exp: 0.95, grass: "#4f8a3c", grass2: "#467d35", hillCol: 0x5f8a45 },
   sunset: { top: "#232a63", mid: "#ef855a", low: "#ffd28c", hill: "#5a3d55", fog: 0xe3a37a, fogD: 0.0007, sun: 0xffa055, sunI: 3.4, sunDir: [0.75, 0.3, -0.4], hemiS: 0xb9a0e0, hemiG: 0x6a4a34, hemiI: 0.8, exp: 1.0, grass: "#6a8238", grass2: "#5e7631", hillCol: 0x8a7a45 },
+  alpine: { top: "#1f6fd1", mid: "#8fc3f0", low: "#dfeaf3", hill: "#5f7f86", fog: 0xc4d6e4, fogD: 0.00042, sun: 0xfff4de, sunI: 3.3, sunDir: [-0.35, 0.82, 0.45], hemiS: 0xcfe4ff, hemiG: 0x55703f, hemiI: 0.95, exp: 0.95, grass: "#4c9a3a", grass2: "#438c33", hillCol: 0x4f8a3c },
   night: { top: "#02040a", mid: "#0a1226", low: "#1c2746", hill: "#0a0f1c", fog: 0x0b1222, fogD: 0.0009, sun: 0xdfe8ff, sunI: 1.6, sunDir: [-0.2, 0.95, 0.25], hemiS: 0x7086c0, hemiG: 0x1c2018, hemiI: 0.8, exp: 1.1, grass: "#243f27", grass2: "#1f3822", hillCol: 0x1e3322 },
 };
 
@@ -197,7 +198,7 @@ export function createWorld(canvas) {
   const decal = (o) => std({ roughness: 0.9, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...o });
   const flat = (w, d, mat, x, z, rot, y) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.set(-Math.PI / 2, 0, -rot); m.position.set(x, y, z); m.receiveShadow = true; return m; };
   const distToTrack = (T, x, z) => T.dist(x, z, 600);
-  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70 };
+  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95 };
   const hillNoise = (x, z) => Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0053 + 0.4) * 0.6 + Math.sin(x * 0.011 + z * 0.007) * 0.25 + Math.sin(x * 0.023 - z * 0.019 + 2) * 0.1 + 0.55;
   const wallOff = (T, s) => (i) => s * (s > 0 ? T.wp[i] : T.wm[i]);
 
@@ -376,6 +377,17 @@ export function createWorld(canvas) {
         for (const [kx, kz, kr] of keepOut) if (Math.hypot(x - kx, z - kz) < kr + 30) hgt = 0;
         p.setY(k, hgt * clamp((1 - edge) * 6, 0, 1) - 0.03);
       }
+      // mountains on the horizon (Red Bull Ring): forested slopes, bare rock and snow on the peaks, kept well beyond the hills
+      if (T.def.mountains) {
+        const R0 = Math.max(B.hx, B.hz) + 1500, N = 26, rock = std({ color: 0x5d6b5a, roughness: 1, flatShading: true, envMapIntensity: 0.15 }), snow = std({ color: 0xf4f7fa, roughness: 0.8, flatShading: true });
+        const mtn = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 7, 1), rock, N), cap = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 7, 1), snow, N);
+        for (let k = 0; k < N; k++) {
+          const a = (k / N) * Math.PI * 2 + rnd(-0.08, 0.08), r = R0 + rnd(0, 900), hgt = rnd(420, 900), rad = hgt * rnd(1.1, 1.6), x = Math.cos(a) * r, z = Math.sin(a) * r, e = new THREE.Euler(0, rnd(0, 6), 0);
+          mt.compose(new V3(x, hgt / 2 - 20, z), q.setFromEuler(e), sc.set(rad, hgt, rad * rnd(0.8, 1.2))); mtn.setMatrixAt(k, mt);
+          const ch = hgt * 0.26; mt.compose(new V3(x, hgt - 20 - ch / 2 + 2, z), q.setFromEuler(e), sc.set(rad * 0.265, ch, rad * 0.265 * 1.0)); cap.setMatrixAt(k, mt);
+        }
+        G.add(mtn, cap);
+      }
       tg.computeVertexNormals();
       const tt = grassTex(m, false); tt.repeat.set(TW / 15, TD / 15);
       const terr = new THREE.Mesh(tg, std({ map: tt, roughness: 1, envMapIntensity: 0.12 })); terr.receiveShadow = true; G.add(terr);
@@ -508,9 +520,9 @@ export function createWorld(canvas) {
   const gtCabTaper = (x, y) => (y > 0.9 ? 1 - (y - 0.9) * 0.6 : 1) * (1 - 0.1 * clamp((-x - 1.4) / 0.7, 0, 1));
   // Formula: tub with airbox, sidepods
   const F1_TUB = [[2.85, 0.16], [2.85, 0.24], [1.9, 0.42], [0.8, 0.6], [0.4, 0.64], [-0.15, 0.62], [-0.35, 0.98], [-1.05, 0.95], [-1.9, 0.62], [-2.2, 0.36], [-2.15, 0.14]];
-  const f1Taper = (x, y) => (x > 0.7 ? 1 - 0.7 * clamp((x - 0.7) / 2.15, 0, 1) : x < -1.2 ? 1 - 0.45 * clamp((-1.2 - x) / 1, 0, 1) : 1) * (y > 0.7 ? 1 - (y - 0.7) * 0.9 : 1);
-  const F1_POD = [[0.6, 0.16], [0.6, 0.54], [0.25, 0.6], [-1.3, 0.44], [-1.85, 0.2], [-1.85, 0.16]];
-  const podTaper = (x, y) => (x < -0.6 ? 1 - 0.45 * clamp((-0.6 - x) / 1.25, 0, 1) : 1);
+  const f1Taper = (x, y) => (x > 0.7 ? 1 - 0.74 * clamp((x - 0.7) / 2.15, 0, 1) ** 0.8 : x < -1.2 ? 1 - 0.5 * clamp((-1.2 - x) / 1, 0, 1) : 1) * (y > 0.64 ? Math.max(0.32, 1 - (y - 0.64) * 2.0) : 1);
+  const F1_POD = [[0.62, 0.24], [0.66, 0.5], [0.42, 0.58], [0.0, 0.57], [-1.0, 0.42], [-1.75, 0.22], [-1.8, 0.14], [0.1, 0.14]];
+  const podTaper = (x, y) => (x < -0.4 ? 1 - 0.6 * clamp((-0.4 - x) / 1.4, 0, 1) : 1) * (y > 0.42 ? 1 - (y - 0.42) * 1.6 : y < 0.24 ? 0.7 + (y - 0.14) * 3 : 1);
   const geoCache = {};
   const cached = (k, f) => geoCache[k] || (geoCache[k] = f());
   const tyreMat = std({ color: 0x0e0e11, roughness: 0.9, envMapIntensity: 0.25 }), capMat = std({ color: 0x2c2f36, roughness: 0.25, metalness: 0.9 }), glassMat = std({ color: 0x05070a, roughness: 0.03, metalness: 0.9, envMapIntensity: 1.8 }), carbon = std({ color: 0x101114, roughness: 0.45, metalness: 0.3, envMapIntensity: 0.6 });
@@ -535,7 +547,7 @@ export function createWorld(canvas) {
     const parts = [], cyl = (rr, l, seg) => { const k = new THREE.CylinderGeometry(rr, rr, l, seg); k.rotateX(Math.PI / 2); return k; };
     parts.push(colored(cyl(r, wdt, 26), 0x111114));
     parts.push(colored(cyl(r * 0.68, wdt + 0.02, 18), f1 ? 0x1a1b1f : 0x34373e));
-    if (f1) { const cv = new THREE.CircleGeometry(r * 0.66, 22); cv.rotateY(side > 0 ? 0 : Math.PI); cv.translate(0, 0, side * (wdt / 2 + 0.013)); parts.push(colored(cv, accent)); const ring = new THREE.TorusGeometry(r * 0.82, 0.018, 4, 26); ring.translate(0, 0, side * (wdt / 2 + 0.006)); parts.push(colored(ring, 0xffd000)); }
+    if (f1) { const cv = new THREE.CircleGeometry(r * 0.64, 22); cv.rotateY(side > 0 ? 0 : Math.PI); cv.translate(0, 0, side * (wdt / 2 + 0.013)); parts.push(colored(cv, 0x1c1d22)); const hub = new THREE.CircleGeometry(r * 0.12, 12); hub.rotateY(side > 0 ? 0 : Math.PI); hub.translate(0, 0, side * (wdt / 2 + 0.016)); parts.push(colored(hub, accent)); const rim = new THREE.TorusGeometry(r * 0.64, 0.012, 4, 26); rim.translate(0, 0, side * (wdt / 2 + 0.012)); parts.push(colored(rim, accent)); const ring = new THREE.TorusGeometry(r * 0.86, 0.011, 4, 30); ring.translate(0, 0, side * (wdt / 2 + 0.006)); parts.push(colored(ring, 0xe8c400)); }
     else for (let k = 0; k < 5; k++) { const sp = new THREE.BoxGeometry(0.42, 0.055, 0.04); sp.rotateZ((k * 2 * Math.PI) / 5); sp.translate(0, 0, side * (wdt / 2 + 0.012)); parts.push(colored(sp, 0x9aa1ab)); }
     return mergeGeometries(parts, false);
   }
@@ -609,10 +621,11 @@ export function createWorld(canvas) {
         const visor = add(new THREE.Mesh(new THREE.SphereGeometry(0.172, 16, 8, -0.9, 1.8, 1.2, 0.5), glassMat), 0.08, 0.72, 0); visor.rotation.y = 0;
         const halo = add(new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 6, 18, Math.PI), dark), 0.22, 0.76, 0); halo.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
         B(0.05, 0.2, 0.05, dark, 0.55, 0.68, 0);
-        B(1.1, 0.32, 0.02, paint, -1.35, 0.95, 0);                                  // shark fin
+        B(0.9, 0.16, 0.015, paint, -1.45, 0.86, 0);                                 // engine-cover fin
         B(0.12, 0.06, 0.08, dark, -0.45, 1.0, 0);                                   // T-cam
         for (const s of [-1, 1]) {
-          B(0.5, 0.42, 0.02, dark, 0.95, 0.32, s * 0.6, 0, s * 0.15);               // barge boards
+          B(0.34, 0.26, 0.012, dark, 0.98, 0.3, s * 0.66, 0, s * 0.12);              // floor-edge vanes
+          B(0.04, 0.2, 0.26, chromeLess, 0.69, 0.4, s * 0.5);                      // sidepod intake
           const mh = B(0.14, 0.07, 0.16, paint, 0.62, 0.66, s * 0.42); R(new V3(0.66, 0.64, s * 0.35), new V3(0.6, 0.5, s * 0.22), 0.012, dark); // mirrors
           // suspension wishbones to each wheel
           const fx = 1.86, rx = -1.72, fz = s * 0.84, rz = s * 0.82;
@@ -626,8 +639,8 @@ export function createWorld(canvas) {
         const f2 = add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.025, 1.92), accentMat), 2.62, 0.16, 0, fw); f2.rotation.z = 0.3;
         const f3 = add(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.022, 1.88), paint), 2.48, 0.22, 0, fw); f3.rotation.z = 0.5;
         add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.05), dark), 2.4, 0.2, 0, fw);              // nose pillar
-        parts.epL = add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.03), paint), 2.7, 0.2, -0.98, tilt, false);
-        parts.epR = add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.03), paint), 2.7, 0.2, 0.98, tilt, false);
+        parts.epL = add(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.2, 0.025), dark), 2.68, 0.18, -0.98, tilt, false);
+        parts.epR = add(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.2, 0.025), dark), 2.68, 0.18, 0.98, tilt, false);
         const spTex = decalTex(title, team.ink || ink(color));
         for (const s of [-1, 1]) {
           const ry = s > 0 ? 0 : Math.PI;
@@ -636,7 +649,7 @@ export function createWorld(canvas) {
         }
         decal(numTex(opts.number ?? 1), 0.34, 0.34, 1.7, 0.47, 0, Math.PI / 2, -Math.PI / 2 + 0.2);
         const rw = new THREE.Group(); tilt.add(rw); parts.rwing = rw;
-        for (const s of [-1, 1]) add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.03), paint), -2.25, 0.82, s * 0.56, rw);
+        for (const s of [-1, 1]) { add(new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.5, 0.025), dark), -2.27, 0.84, s * 0.56, rw); add(new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.07, 0.03), paint), -2.27, 1.1, s * 0.56, rw); add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.03), accentMat), -2.4, 0.62, s * 0.56, rw); }
         add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 1.1), dark), -2.22, 0.96, 0, rw);
         add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), dark), -2.15, 0.7, 0, rw);              // swan-neck pylon
         add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.95), dark), -2.3, 0.45, 0, rw);              // beam wing
@@ -759,7 +772,7 @@ export function createWorld(canvas) {
     lineT += dt;
     const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight, asp = w / h;
     lineCam.aspect = asp; const dist = 10.5 * Math.max(1, 1.78 / asp);
-    lineCam.position.set(Math.sin(lineT * 0.08) * 1.2, 1.9, dist - Math.min(1.2, lineT * 0.12)); lineCam.lookAt(0, 1.15, -0.6); lineCam.updateProjectionMatrix();
+    if (W.studioCam) { const c = W.studioCam; lineCam.position.set(...c.pos); lineCam.lookAt(...c.look); lineCam.fov = c.fov || 32; } else { lineCam.fov = 32; lineCam.position.set(Math.sin(lineT * 0.08) * 1.2, 1.9, dist - Math.min(1.2, lineT * 0.12)); lineCam.lookAt(0, 1.15, -0.6); } lineCam.updateProjectionMatrix(); // studioCam: test hook for close-up renders
     for (const s of lineSlots) { const b = s.driver.userData.body; b.scale.y = 1 + Math.sin(lineT * 2.1 + s.x) * 0.006; }
     renderer.render(lineScene, lineCam);
   }

@@ -37,7 +37,7 @@ const track = (i) => built[i] || (built[i] = buildTrack(TRACKS[i]));
 const world = createWorld($("#gl"));
 if (prefs.gfx !== "auto") world.setQuality(prefs.gfx);
 const audio = createAudio(); audio.muted = !prefs.sound;
-window.__deskgp = { world, track, get S() { return S; }, set auto(v) { S.auto = !!v; }, podium: (r) => showPodium(r) }; // auto: test hook, the AI drives your car
+window.__deskgp = { world, track, get S() { return S; }, set auto(v) { S.auto = !!v; }, podium: (r) => showPodium(r), teamOf }; // auto: test hook, the AI drives your car
 
 const S = { screen: "menu", room: null, race: null, boss: false, paused: false, clockOff: 0, clockRtt: 1e9, joinedAt: 0 };
 const netNow = () => performance.now() + S.clockOff;
@@ -81,12 +81,12 @@ addEventListener("keydown", (e) => {
   if (e.repeat) return;
   keys.add(e.code); audio.init();
   if (e.code === "KeyM") setSound(!prefs.sound);
-  else if (e.code === "KeyH") toggleHelp();
+  else if (e.code === "KeyH" || e.code === "KeyB") toggleHelp(); // B (or H): the key card
   else if (S.screen !== "race") return;
   else if (e.code === "KeyC") { prefs.cam = (prefs.cam + 1) % 4; savePrefs(); toast(CAMS[prefs.cam]); }
   else if (e.code === "KeyF") { const c = S.race?.mine?.c; if (c) { if (prefs.aeroAuto) { prefs.aeroAuto = false; savePrefs(); } c.aeroAuto = false; c.aeroReq = !c.aeroOpen; audio.fx("flap"); toast(c.aeroReq ? "Flap open: Straight Mode" : "Flap closed: Corner Mode"); } }
   else if (e.code === "KeyT") { prefs.aeroAuto = !prefs.aeroAuto; savePrefs(); const c = S.race?.mine?.c; if (c) c.aeroAuto = prefs.aeroAuto; toast(prefs.aeroAuto ? "Active aero: automatic" : "Active aero: manual (F)"); }
-  else if (e.code === "BracketLeft" || e.code === "BracketRight") { prefs.bias = Math.round(clamp(prefs.bias + (e.code === "BracketRight" ? 0.005 : -0.005), 0.5, 0.62) * 1000) / 1000; savePrefs(); const c = S.race?.mine?.c; if (c) c.bias = prefs.bias; audio.fx("click"); }
+  else if (e.code === "BracketLeft" || e.code === "BracketRight") { prefs.bias = Math.round(clamp(prefs.bias + (e.code === "BracketRight" ? 0.01 : -0.01), 0.5, 0.62) * 100) / 100; savePrefs(); const c = S.race?.mine?.c; if (c) c.bias = prefs.bias; audio.fx("click"); toast(`Brake bias ${Math.round(prefs.bias * 100)}% \u00b7 ${biasWord(prefs.bias)}`); }
   else if (e.code === "KeyE") { prefs.ers = (prefs.ers + 1) % 3; savePrefs(); const c = S.race?.mine?.c; if (c) c.ers = prefs.ers; toast(`ERS: ${["Harvest", "Balanced", "Attack"][prefs.ers]}`); }
   else if (e.code === "KeyV") { prefs.hud = prefs.hud === "full" ? "minimal" : "full"; savePrefs(); $("#hud").classList.toggle("minimal", prefs.hud !== "full"); }
   else if (e.code === "KeyK") { prefs.voice = !prefs.voice; savePrefs(); if (!prefs.voice) speechSynthesis?.cancel(); toast(prefs.voice ? "Engineer voice on" : "Engineer voice off"); }
@@ -120,7 +120,13 @@ function radio(text, prio = 1, cool = 20, key = text) {
 }
 function engineer(race, e, raceT) {
   const c = e.c; if (race.quali || e.fin || raceT < 0) return;
-  if (raceT > 1 && !race.radioStart) { race.radioStart = true; radio("Lights out. Tyres are cold, build the temperature through the first few corners.", 3, 999); return; }
+  if (raceT > 1 && !race.radioStart) { race.radioStart = true; radio("Lights out. Tyres are in the window. Go!", 3, 999); return; }
+  // lock-ups: count them (one per stop) and tell the driver which way to move the bias
+  const lf = c.lockF > 0.45, lr = c.lockR > 0.45;
+  if (lf && !e.wasLF) { e.nLF = (e.nLF || 0) + 1; if (e.nLF % 2 === 0) radio("You're locking the fronts. Bring the brake bias rearward, left bracket.", 2, 40, "lockf"); }
+  if (lr && !e.wasLR) { e.nLR = (e.nLR || 0) + 1; if (e.nLR % 2 === 0) radio("Rear is stepping out on entry. Bias forward with right bracket, or brake straighter.", 2, 40, "lockr"); }
+  e.wasLF = lf; e.wasLR = lr;
+  if (raceT > 25 && !prefs.learnedBias) { prefs.learnedBias = true; savePrefs(); radio("Brake bias is yours to play with. Rearward rotates the car into slow corners but can slide it. Forward is stable but locks the fronts.", 1, 1, "biastip"); }
   const tf = (c.tt[0] + c.tt[1]) / 2, ta = c.tt.reduce((a, b) => a + b) / 4;
   if (tf > 114) radio(`Fronts are overheating. ${c.bias > 0.555 ? "Move the brake bias rearward and e" : "E"}ase the entry speed.`, 1, 45, "hot");
   else if (raceT > 50 && ta < 72) radio("Tyres are still cold. Push a bit harder in the corners to bring them in.", 1, 60, "cold");
@@ -136,6 +142,7 @@ function lapRadio(race, e, fin) {
   if (e.lapsDone === race.laps - 1) { radio(`Final lap. P${i + 1}.${A ? ` ${A.code} is ${gap(e, A) ?? "close"} ahead.` : " Bring it home."}`, 3, 1, "final"); return; }
   radio(`P${i + 1}.${A ? ` Gap ahead ${gap(e, A) ?? "-"}.` : ""}${B ? ` Gap behind ${gap(B, e) ?? "-"}.` : ""}`, 2, 1, "lap" + e.lapsDone);
 }
+function biasWord(b, short) { return b > 0.565 ? (short ? "FWD" : "forward: stable, fronts lock into corners") : b < 0.548 ? (short ? "REAR" : "rearward: rotates on entry, the rear can slide") : short ? "NEUTRAL" : "neutral"; }
 function toggleHelp(force) { const h = $("#help"); const on = force ?? h.hidden; h.hidden = !on; if (!on && !prefs.seenControls) { prefs.seenControls = true; savePrefs(); } }
 
 // ---------- screens ----------
@@ -188,10 +195,15 @@ $("#p-leave").onclick = () => leaveRoom();
 $("#p-sound").textContent = `Sound: ${prefs.sound ? "on" : "off"}`; $("#p-ghost").textContent = `Ghost of your best lap: ${prefs.ghost ? "on" : "off"}`; $("#p-gfx").textContent = `Graphics: ${gfxLabel()}`;
 world.onQuality = () => console.info("DeskGP: graphics lowered to keep the frame rate up");
 
+// a miniature of the team's car, side on, in its livery (drawn here: no logo artwork)
+function miniCar(t) {
+  const b = t.body, a = t.accent, d = "#15171b";
+  return `<svg viewBox="0 0 124 38" aria-hidden="true"><path d="M5 9h15v4H5z" fill="${d}"/><path d="M4 7h3v17H4z" fill="${a}"/><path d="M17 27 22 15c6-3 14-4 22-4l9 3h7l3-3 4 0 2 4 30 7 14 4v3H17z" fill="${b}"/><path d="M40 24c10-2 24-2 40 0l-2 3H42z" fill="${d}" opacity=".35"/><path d="M24 22h70l12 3H24z" fill="${a}" opacity=".9"/><circle cx="66" cy="12.5" r="3.3" fill="${a}"/><path d="M58 13.5c4-4 10-4 14 0" stroke="${d}" stroke-width="1.6" fill="none"/><path d="M98 28h22v3H96z" fill="${d}"/><path d="M117 24h3v7h-3z" fill="${a}"/><g fill="${d}"><circle cx="28" cy="27" r="9"/><circle cx="96" cy="28" r="8"/></g><g fill="none" stroke="#e8c400" stroke-width="1"><circle cx="28" cy="27" r="7.4"/><circle cx="96" cy="28" r="6.6"/></g><g fill="#2a2d33"><circle cx="28" cy="27" r="5"/><circle cx="96" cy="28" r="4.4"/></g></svg>`;
+}
 function rankOf(xp) { let r = RANKS[0]; for (const x of RANKS) if (xp >= x[0]) r = x; return r[1]; }
 function renderMenu() {
   $("#name").value = prefs.name; $("#num").value = prefs.num || "";
-  $("#colors").innerHTML = TEAMS.map((t) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="background:${t.body};color:${t.ink};border-color:${t.id === prefs.team ? "#fff" : t.accent}" aria-label="${t.name}">${esc(t.short || t.name)}</button>`).join("");
+  $("#colors").innerHTML = TEAMS.map((t) => `<button class="team${t.id === prefs.team ? " on" : ""}" data-t="${t.id}" style="--tc:${uiColor(t)}" aria-label="${esc(t.name)}">${miniCar(t)}<span>${esc(t.name.replace(" F1 Team", ""))}</span></button>`).join("");
   $("#career").textContent = prefs.races ? `${rankOf(prefs.xp)} · ${prefs.xp} points · ${prefs.wins} win${prefs.wins === 1 ? "" : "s"} from ${prefs.races} starts` : "";
   const hc = parseRoomCode(location.hash); if (hc) $("#code").value = formatRoomCode(hc);
   // opened from an invite link: the one thing to do is join, so make that the obvious button
@@ -684,7 +696,14 @@ function big(text, sub) { const b = $("#big"); b.innerHTML = esc(text) + (sub ? 
 function feed(html) { if (S.screen !== "race") return; const d = document.createElement("div"); d.innerHTML = html; const box = $("#feed"); box.append(d); while (box.childElementCount > 4) box.firstChild.remove(); setTimeout(() => d.remove(), 7000); }
 $("#rpm").innerHTML = Array.from({ length: 15 }, (_, i) => `<i class="${i >= 12 ? "h" : i >= 6 ? "m" : ""}"></i>`).join("");
 let mapBase = null;
-function drawMapBase(T) { mapBase = document.createElement("canvas"); mapBase.width = 440; mapBase.height = 300; drawMini(mapBase, T); }
+// in-race map: minimal, just the circuit as a thin line and the cars as dots, no box
+function drawMapBase(T) {
+  mapBase = document.createElement("canvas"); mapBase.width = 440; mapBase.height = 300;
+  const g = mapBase.getContext("2d"), B = T.box, sc = Math.min((440 - 16) / (B.hx * 2), (300 - 16) / (B.hz * 2)), X = (x) => 220 + x * sc, Z = (z) => 150 + z * sc;
+  g.lineJoin = g.lineCap = "round"; g.beginPath(); for (let i = 0; i < T.n; i += 3) g.lineTo(X(T.x[i]), Z(T.z[i])); g.closePath();
+  g.strokeStyle = "rgba(0,0,0,.45)"; g.lineWidth = 9; g.stroke(); g.strokeStyle = "rgba(255,255,255,.92)"; g.lineWidth = 3.5; g.stroke();
+  const tx = T.tx[0], tz = T.tz[0]; g.strokeStyle = "#e10600"; g.lineWidth = 4; g.beginPath(); g.moveTo(X(T.x[0]) - tz * 9, Z(T.z[0]) + tx * 9); g.lineTo(X(T.x[0]) + tz * 9, Z(T.z[0]) - tx * 9); g.stroke();
+}
 const hudCache = {};
 function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
 function setClass(id, cls, on) { const k = id + "." + cls; if (hudCache[k] !== on) { hudCache[k] = on; $(id).classList.toggle(cls, on); } }
@@ -738,7 +757,7 @@ function updateHud(race, dt, now) {
     $("#pd-thr").style.height = (c.thr * 100).toFixed(0) + "%"; $("#pd-brk").style.height = (c.brk * 100).toFixed(0) + "%";
     const tk = c.tt.map((x) => Math.round(x)).join();
     if (hudCache.tt !== tk) { hudCache.tt = tk; c.tt.forEach((t, k) => { const el = $("#ty" + k); el.textContent = Math.round(t); el.style.background = t < 70 ? "#3a86ff" : t < 85 ? "#7ee0ff" : t <= 110 ? "#2fe37a" : t <= 120 ? "#ffb020" : "#ff3b3b"; }); setText("#tygrip", `GRIP ${Math.round(c.tg.reduce((a, b) => a + b) / 4 * 100)}%`); }
-    setText("#dl-bb", (c.bias * 100).toFixed(1)); setText("#dl-ers", ["HARV", "BAL", "ATK"][c.ers]); setText("#dl-aero", c.aeroAuto ? (c.aeroOpen ? "AUTO\u00b7S" : "AUTO\u00b7C") : c.aeroOpen ? "STRAIGHT" : "CORNER");
+    setText("#dl-bb", Math.round(c.bias * 100) + "%"); setText("#dl-bbw", biasWord(c.bias, true)); { const lk = `${c.lockF > 0.3 ? 1 : 0}${c.lockR > 0.3 ? 1 : 0}`; if (hudCache.lk !== lk) { hudCache.lk = lk; for (const k of [0, 1]) $("#ty" + k).classList.toggle("lock", lk[0] === "1"); for (const k of [2, 3]) $("#ty" + k).classList.toggle("lock", lk[1] === "1"); } } setText("#dl-ers", ["HARV", "BAL", "ATK"][c.ers]); setText("#dl-aero", c.aeroAuto ? (c.aeroOpen ? "AUTO\u00b7S" : "AUTO\u00b7C") : c.aeroOpen ? "STRAIGHT" : "CORNER");
   }
   if (view === race.mine && c.aeroFlip) { audio.fx("flap"); c.aeroFlip = false; }
   if (view === race.mine) engineer(race, view, raceT); setClass("#b-tow", "on", c.tow > 0.15); setClass("#b-ers", "on", !!c.boosting);
@@ -809,7 +828,7 @@ function updateHud(race, dt, now) {
   const sc = Math.min((440 - 16) / (T.box.hx * 2), (300 - 16) / (T.box.hz * 2));
   for (let i = race.order.length - 1; i >= 0; i--) {
     const e = race.order[i]; if (e.hide) continue; const mine = e === view, x = 220 + e.c.x * sc, y = 150 + e.c.z * sc;
-    gx.beginPath(); gx.arc(x, y, mine ? 9 : 6, 0, 6.3); gx.fillStyle = e.color; gx.fill(); gx.lineWidth = mine ? 3 : 1.5; gx.strokeStyle = mine ? "#fff" : "rgba(0,0,0,.7)"; gx.stroke();
+    gx.beginPath(); gx.arc(x, y, mine ? 10 : 7, 0, 6.3); gx.fillStyle = e.color; gx.fill(); gx.lineWidth = mine ? 3.5 : 2; gx.strokeStyle = mine ? "#fff" : "rgba(10,12,16,.85)"; gx.stroke();
   }
 }
 

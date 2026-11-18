@@ -9,11 +9,16 @@ export const DIFFS = [
   { id: "rookie", name: "Rookie", skill: 0.84 }, { id: "pro", name: "Pro", skill: 0.9 },
   { id: "expert", name: "Expert", skill: 0.955 }, { id: "legend", name: "Legend", skill: 1.0 },
 ];
+// Three-letter timing code: surname style ("Lewis Hamilton" HAM, "Abhi" ABH). A driver who never typed a name
+// ("Driver 3P6") gets their tag ("3P6"), never "YOU": everyone else would see a stranger called YOU.
 export const codeOf = (name) => {
   const d = DRIVERS.find((x) => x[0] === name); if (d) return d[1];
-  const w = String(name || "").trim().split(/\s+/), s = (w.length > 1 ? w[w.length - 1] : w[0] || "DRV").replace(/[^A-Za-z]/g, "");
-  if (s.length < 3) { const all = String(name || "").replace(/[^A-Za-z]/g, ""); return all.length >= 3 && !/^Driver/i.test(name) ? all.slice(0, 3).toUpperCase() : "YOU"; }
-  return s.slice(0, 3).toUpperCase();
+  const raw = String(name || "").trim();
+  const def = raw.match(/^Driver\s+([A-Za-z0-9]{3})/); if (def) return def[1].toUpperCase();
+  const w = raw.split(/\s+/).map((x) => x.replace(/[^\p{L}0-9]/gu, "")).filter(Boolean);
+  const last = w[w.length - 1] || "";
+  if (last.length >= 3) return last.slice(0, 3).toUpperCase();
+  const all = w.join(""); return (all.length >= 3 ? all.slice(0, 3) : (all + "XXX").slice(0, 3)).toUpperCase();
 };
 
 export function makeBrain(skill, seed = Math.random()) {

@@ -20,7 +20,7 @@ export function makeCar(id, cls = CLASSES.gt) {
     idx: 0, lat: 0, total: 0, offT: 0, y: 0, bump: 0, speed: 0, wrong: 0, respawned: 0,
     dmg: { f: 0, r: 0, l: 0, rt: 0, e: 0 }, hits: [], retired: false, tl: false,
     // driver settings and car state: active aero, brake bias, ERS mode, tyre temperatures (FL, FR, RL, RR, deg C)
-    aeroAuto: true, aeroReq: false, aeroOpen: false, bias: 0.56, ers: 1, tt: [86, 86, 84, 84], tg: [1, 1, 1, 1], aeroK: 0, overtake: false,
+    aeroAuto: true, aeroReq: false, aeroOpen: false, bias: 0.56, ers: 1, tt: [86, 86, 84, 84], tg: [1, 1, 1, 1], aeroK: 0, lockF: 0, lockR: 0, overtake: false,
   };
 }
 
@@ -115,12 +115,21 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   const dir = vf >= 0 ? 1 : -1;
   // trail braking: brake pressure moves weight forward and the nose bites; a rearward brake bias rotates the car more;
   // throttle unloads the front (understeer on power)
-  const wt = 1 + brk * (0.12 + (0.58 - (c.bias ?? 0.56)) * 1.2) ;
-  const yawCap = Math.min(3.0, 1.0 * Gnom * front * wt / Math.max(v, 5)) * clamp(v / 2.5, 0, 1);
+  const bias = c.bias ?? 0.56;
+  const wt = 1 + brk * (0.12 + (0.58 - bias) * 1.2);
+  // lock-ups: brake bias decides which axle locks first when you brake hard, worst while you are also turning.
+  // Forward bias locks the fronts (smoke, the car runs straight on: understeer); rearward bias locks the rears
+  // (the tail steps out: the car rotates into the corner and can slide or spin). Neutral (~56%) locks nothing.
+  const bk = clamp(brk * 1.25 - 0.25, 0, 1) * (v > 12 && c.surf < 2 ? 1 : 0), turn = Math.min(1, Math.abs(c.steer) / 0.55);
+  const lockF = bk * clamp((bias - 0.565) / 0.035, 0, 1) * (0.35 + 0.65 * turn);
+  const lockR = bk * clamp((0.548 - bias) / 0.035, 0, 1) * (0.2 + 0.8 * turn);
+  c.lockF = lockF; c.lockR = lockR;
+  const yawCap = Math.min(3.0, 1.0 * Gnom * front * wt * (1 - 0.7 * lockF) * (1 + 0.35 * lockR) / Math.max(v, 5)) * clamp(v / 2.5, 0, 1);
   const slipAng = Math.atan2(vl, Math.abs(vf) + 2);
   let wTarget = clamp(c.steer + pull, -1, 1) * yawCap * dir;
   wTarget += slipAng * 2.4 * clamp(v / 12, 0, 1) * clamp(c.sat * 4 - 3, 0, 1); // nose follows a slide back, near the limit only
   if (thr > 0.6 && v < 30 && c.surf !== 0) wTarget += c.steer * 0.3 * thr; // loose rear on kerbs and grass under power
+  if (lockR > 0.05) wTarget += c.w * 0.5 * lockR + c.steer * 0.25 * lockR * dir; // locked rears: the tail keeps coming round
   c.w += (wTarget - c.w) * (1 - Math.exp(-(19 + 4 * hi) * dt)); // yaw inertia: crisp at every speed
   c.h += c.w * dt;
 
@@ -130,7 +139,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   if (thr > 0) acc += thr * Math.min(cls.traction * surfGrip, cls.power * pmul / Math.max(Math.abs(vf), 1));
   const regen = vf > 8 ? cls.regen * Math.max(0, 1 - thr * 6 - brk * 6) : 0; // lift-off regeneration / engine braking
   const drag = cls.drag * (1 - 0.28 * c.aeroK) * (1 - 0.35 * c.tow) * (perf ? 1 + 0.25 * D.f : 1) * v * v + extraDrag + 0.25 + regen;
-  const brakeA = brk * Math.min(cls.brake, G);
+  const brakeA = brk * Math.min(cls.brake, G) * (1 - 0.14 * c.lockF - 0.1 * c.lockR); // a locked tyre stops worse than a rolling one
   if (inp.reverse && vf < 2 && !c.retired) acc = -6 * surfGrip;
   vf += acc * dt;
   const dec = (drag + (vf > 0 || !inp.reverse ? brakeA : 0)) * dt;
@@ -140,13 +149,13 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   // lateral: tyres push back in proportion to sideways slip (cornering stiffness), up to the friction budget
   // that braking also draws on. So the nose turns in first, the car takes a small slip angle, then grip builds.
   const used = brakeA / Math.max(G, 1e-3);
-  const budget = G * Math.sqrt(Math.max(0.3, 1 - 0.5 * used * used)) * dt;
+  const budget = G * Math.sqrt(Math.max(0.3, 1 - 0.5 * used * used)) * (1 - 0.5 * c.lockR) * dt; // locked rears hold little sideways: a slide
   const fx2 = Math.cos(c.h), fz2 = Math.sin(c.h);
   const wvx = fx * vf + rx * vl, wvz = fz * vf + rz * vl;
   let nf = wvx * fx2 + wvz * fz2, nl = wvx * -fz2 + wvz * fx2;
   const want = -nl * 12 * dt, sat = Math.abs(want) / Math.max(budget, 1e-6);
   nl += clamp(want, -budget, budget); c.sat = sat;
-  c.slip = Math.min(2, Math.max(0, sat - 0.92) * 1.6);
+  c.slip = Math.min(2, Math.max(Math.max(0, sat - 0.92) * 1.6, 0.9 * Math.max(c.lockF, c.lockR))); // smoke, marks and tyre squeal
   if (sat > 1) nf -= Math.sign(nf) * Math.min(Math.abs(nf), Math.abs(nl) * 0.8 * dt); // sliding scrubs speed
   c.vx = fx2 * nf - fz2 * nl; c.vz = fz2 * nf + fx2 * nl;
   c.x += c.vx * dt; c.z += c.vz * dt;
@@ -155,7 +164,7 @@ export function stepCar(c, inp, dt, T, opts = {}) {
   // tyre temperatures: heat from cornering load (outside tyres most), braking (by bias), traction and sliding;
   // cooled by the air. Grip falls off outside the 85-110 C window.
   { const ay = c.w * c.speed, u = Math.min(1.5, Math.abs(ay) / Math.max(G, 1)), right = ay > 0, b = brakeA / Math.max(G, 1), a = Math.min(1, acc / Math.max(cls.traction, 1)), sl = c.slip;
-    const bias = c.bias ?? 0.56, drv = cls.id === "f1" ? [0, 0, 1, 1] : [0.8, 0.8, 1, 1];
+    const drv = cls.id === "f1" ? [0, 0, 1, 1] : [0.8, 0.8, 1, 1];
     for (let k = 0; k < 4; k++) {
       const outer = (k % 2 === 0) === right ? 1.35 : 0.65, fr = k < 2;
       // heat ~ energy dissipated in the contact patch: lateral load x speed, braking load x speed, wheelspin, sliding

@@ -41,7 +41,7 @@ if (prefs.gfx !== "auto") world.setQuality(prefs.gfx);
 const audio = createAudio(); audio.muted = !prefs.sound;
 window.__deskgp = { world, track, get S() { return S; }, set auto(v) { S.auto = !!v; }, podium: (r) => showPodium(r), teamOf }; // auto: test hook, the AI drives your car
 
-const S = { screen: "menu", room: null, race: null, boss: false, paused: false, clockOff: 0, clockRtt: 1e9, joinedAt: 0 };
+const S = { screen: "menu", room: null, race: null, boss: false, paused: false, clockOff: 0, clockRtt: 1e9, clockSynced: false, joinedAt: 0 };
 const netNow = () => performance.now() + S.clockOff;
 // a challenge link (#c=...) opened: someone's best lap to race against
 S.challenge = location.hash.startsWith("#c=") ? decodeChallenge(location.hash.slice(3)) : null;
@@ -149,10 +149,12 @@ function biasWord(b, short) { return b > 0.565 ? (short ? "FWD" : "forward: stab
 function toggleHelp(force) { const h = $("#help"); const on = force ?? h.hidden; h.hidden = !on; if (!on && !prefs.seenControls) { prefs.seenControls = true; savePrefs(); } }
 
 // ---------- screens ----------
+function clearHold() { const h = $("#hold"); if (h) h.hidden = true; }
 function show(name) {
   S.screen = name;
   for (const id of ["menu", "lobby", "results"]) $("#" + id).hidden = id !== name;
   $("#hud").hidden = name !== "race"; $("#pause").hidden = true; S.paused = false;
+  clearHold();
   if (name === "menu") renderMenu();
   world.setLite(name === "menu" || name === "lobby");
 }
@@ -173,27 +175,42 @@ function hostHold() {
   const at = Math.round(netNow());
   race.holdQ = (race.holdQ || 0) + 1; // numbered: relays can deliver "resume" before "pause"; the newer one wins
   applyHold(want, at);
+  race.lastHoldSend = performance.now();
   S.room?.net?.send(holdMsg(race), { reliable: true });
 }
 function applyHold(on, at) {
-  const race = S.race; if (!race) return;
+  const race = S.race; if (!race || race.demo) { clearHold(); return; }
   race.holdSeen = performance.now();
-  if (on === race.held) return;
-  if (on) { race.held = true; race.heldAt = at; }
-  else {
-    race.held = false; race.resumedAt = at; race.t0 += Math.max(0, at - race.heldAt); // the race clock skips the paused time
-    for (const e of race.cars) { e.snaps.length = 0; e.lastSeen = performance.now(); }
-    acc = 0;
+  if (on !== race.held) {
+    if (on) { race.held = true; race.heldAt = at; }
+    else {
+      race.held = false; race.resumedAt = at;
+      race.t0 += clamp(at - race.heldAt, 0, 3600000); // the race clock skips the paused time
+      for (const e of race.cars) { e.snaps.length = 0; e.lastSeen = performance.now(); e.lastRecv = 0; }
+      acc = 0;
+    }
   }
-  const h = $("#hold"); if (h) { h.hidden = !race.held || (isHost() && S.paused); h.textContent = isHost() ? "Paused" : "Paused \u00b7 waiting for the host to come back"; }
+  const h = $("#hold");
+  if (h) {
+    h.hidden = !race.held || (isHost() && S.paused) || S.screen !== "race";
+    h.textContent = isHost() ? "Paused" : "Paused \u00b7 waiting for the host to come back";
+  }
 }
-document.addEventListener("visibilitychange", hostHold);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) hiddenAt = 0; hostHold(); });
+let netSyncTick = 0;
 setInterval(() => { // keep reminding everyone while held; if the host vanishes mid-pause, carry on without them
-  const race = S.race; if (!race || race.demo) return;
-  // the host states the pause state every 2 s, held or not: a player who missed or mis-ordered a message is right again within 2 s
-  if (isHost()) { hostHold(); if (S.room?.net && !race.ended) S.room.net.send(holdMsg(race), { reliable: true }); }
-  else if (race.held && performance.now() - (race.holdSeen || 0) > 8000) applyHold(false, Math.round(netNow()));
-}, 2000);
+  const race = S.race;
+  netSyncTick++;
+  if (S.room?.net && !isHost() && (!S.clockSynced || S.clockRtt > 80 || netSyncTick % 2 === 0)) sendPing();
+  if (!race || race.demo) return;
+  if (isHost()) {
+    hostHold();
+    if (S.room?.net && !race.ended && netSyncTick % 2 === 0) {
+      race.lastHoldSend = performance.now();
+      S.room.net.send(holdMsg(race), { reliable: true });
+    }
+  } else if (race.held && performance.now() - (race.holdSeen || 0) > 8000) applyHold(false, Math.round(netNow()));
+}, 1000);
 const gfxLabel = () => ({ auto: "auto", 2: "high (effects)", 1: "standard", 0: "low" })[prefs.gfx];
 $("#p-resume").onclick = () => setPaused(false);
 $("#p-sound").onclick = () => setSound(!prefs.sound);
@@ -258,21 +275,27 @@ $("#join").onclick = () => {
 
 // ---------- room / lobby ----------
 function defaultCfg() { const c = Object.assign({ track: 0, laps: 3, bots: 7, diff: 1, cls: "gt", rules: "casual" }, store.get("cfg5", {})); if (!(c.track < TRACKS.length)) c.track = 0; c.quali = c.rules === "gp"; c.dmg = c.rules === "gp" ? 2 : 1; return c; }
+function sendPing() { const R = S.room; if (!R?.net || isHost()) return; R.net.send({ t: "pi", a: performance.now() }, { to: hostId() }); }
 function enterRoom(code, creator) {
   leaveNet();
   me.joined = creator || !code ? 1 : Date.now();
   const R = S.room = { code, solo: !code, net: null, cfg: defaultCfg(), points: {}, raceN: 0, phase: "lobby", go: null, gotLob: !code || creator, qgrid: null };
   if (!R.solo) R.cfg.bots = Math.min(R.cfg.bots, 5);
-  S.joinedAt = performance.now(); S.clockOff = 0; S.clockRtt = 1e9;
+  S.joinedAt = performance.now(); S.clockOff = 0; S.clockRtt = 1e9; S.clockSynced = false;
   if (code) {
-    R.net = createNet(code, me, { onPeers: () => { renderLobby(); if (isHost()) sendLob(); }, onMsg, onStatus: renderLobby });
+    R.net = createNet(code, me, {
+      onPeers: () => { renderLobby(); if (isHost()) sendLob(); else sendPing(); },
+      onRtc: (p) => { if (p.id === hostId()) sendPing(); if (isHost()) sendLob(p.id); },
+      onMsg,
+      onStatus: renderLobby,
+    });
     try { history.replaceState(null, "", "#" + code); } catch {}
   }
   show("lobby"); renderLobby(); startDemo();
 }
 function leaveNet() { if (S.room?.net) S.room.net.close(); }
 function leaveRoom() {
-  leaveNet(); S.room = null; closeLineup(); endRace();
+  leaveNet(); S.room = null; closeLineup(); endRace(); clearHold();
   try { history.replaceState(null, "", location.pathname + location.search); } catch {}
   try { document.querySelector("link[rel=icon]").href = faviconHref(); } catch {}
 show("menu"); startDemo();
@@ -288,8 +311,8 @@ function isHost() {
   if (hostId() !== me.id) return false;
   return R.gotLob || performance.now() - S.joinedAt > 5000;
 }
-function sendLob(to) { const R = S.room; if (!R?.net || !isHost()) return; R.gotLob = true; R.net.send({ t: "lob", cfg: R.cfg, points: R.points, raceN: R.raceN, phase: R.phase, go: R.phase === "race" ? R.go : null }, { reliable: true, to }); }
-setInterval(() => { const R = S.room; if (!R?.net) return; if (isHost()) sendLob(); else R.net.send({ t: "pi", a: performance.now() }, { to: hostId() }); if (S.screen === "lobby") renderLobby(); }, 2000);
+function sendLob(to) { const R = S.room; if (!R?.net || !isHost()) return; R.gotLob = true; R.net.send({ t: "lob", cfg: R.cfg, points: R.points, raceN: R.raceN, phase: R.phase, go: R.phase === "race" ? R.go : null, now: Math.round(netNow()) }, { reliable: true, to }); }
+setInterval(() => { const R = S.room; if (!R?.net) return; if (isHost()) sendLob(); if (S.screen === "lobby") renderLobby(); }, 2000);
 
 function setCfg(k, v) { const R = S.room; if (!isHost()) return; R.cfg[k] = v; if (k === "rules") { R.cfg.quali = v === "gp"; R.cfg.dmg = v === "gp" ? 2 : 1; } store.set("cfg5", R.cfg); audio.fx("click"); sendLob(); renderLobby(); if (k === "track" || k === "cls") startDemo(true); }
 function seg(el, items, cur, onPick) {
@@ -324,11 +347,12 @@ function renderLobby() {
     tk.innerHTML = TRACKS.map((d, i) => `<button class="trk" data-i="${i}" title="${esc(d.name)}"><canvas width="150" height="96"></canvas><b>${esc(d.short || d.name)}</b></button>`).join("");
     tk.querySelectorAll("canvas").forEach((cv, i) => drawCircuitArt(cv, outlineOf(TRACKS[i]), { mono: true, pad: 10, lw: 3 }));
     tk.onclick = (e) => { const b = e.target.closest(".trk"); if (b) setCfg("track", +b.dataset.i); };
+    tk.addEventListener("wheel", (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { tk.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
   }
   tk.querySelectorAll(".trk").forEach((b, i) => b.classList.toggle("on", i === R.cfg.track));
   const D = TRACKS[R.cfg.track];
   if (S.heroFor !== R.cfg.track) { S.heroFor = R.cfg.track; drawCircuitArt($("#trk-hero"), outlineOf(D), { pad: 26, lw: 7 }); tk.querySelector(".trk.on")?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }
-  setText("#trk-name", D.name); setText("#trk-meta", `${D.country.toUpperCase()} \u00b7 ${(D.length / 1000).toFixed(3)} KM${D.crossover ? " \u00b7 FIGURE OF EIGHT" : ""}`);
+  setText("#trk-name", D.name); setText("#trk-meta", `${D.country.toUpperCase()} \u00b7 ${(D.length / 1000).toFixed(3)} KM${D.crossover ? " \u00b7 FIGURE OF EIGHT" : ""} \u00b7 ${R.cfg.track + 1}/${TRACKS.length}`);
   const pb = store.get(`pb3:${D.id}:${R.cfg.cls}`, null);
   setText("#trkblurb", D.blurb + (pb ? ` Your best: ${fmt(pb.t)}.` : ""));
   const pick = (k) => (v) => setCfg(k, v);
@@ -364,7 +388,7 @@ function buildGrid(order) {
 }
 function startSession(mode, order) {
   const R = S.room; if (!isHost()) return;
-  R.go = { t: "go", mode, at: Math.round(netNow() + (mode === "race" ? 6500 : 1500)), hold: Math.round(400 + Math.random() * 2200), cfg: { ...R.cfg }, grid: buildGrid(order), n: mode === "race" ? ++R.raceN : R.raceN + 0.5 };
+  R.go = { t: "go", mode, at: Math.round(netNow() + (mode === "race" ? 6500 : 1500)), hold: Math.round(400 + Math.random() * 2200), cfg: { ...R.cfg }, grid: buildGrid(order), n: mode === "race" ? ++R.raceN : R.raceN + 0.5, now: Math.round(netNow()) };
   R.phase = "race"; R.net?.send(R.go, { reliable: true }); sendLob();
   startRace(R.go);
 }
@@ -375,14 +399,33 @@ function onMsg(from, m) {
   const R = S.room; if (!R) return; const race = S.race;
   switch (m.t) {
     case "pi": R.net.send({ t: "po", a: m.a, b: performance.now() + S.clockOff }, { to: from }); break;
-    case "po": { const now = performance.now(), rtt = now - m.a; if (rtt < S.clockRtt * 1.3 || rtt < 60) { if (rtt < S.clockRtt) S.clockRtt = rtt; S.clockOff = m.b + rtt / 2 - now; } S.clockRtt *= 1.05; break; }
+    case "po": {
+      const now = performance.now(), rtt = now - m.a;
+      if (rtt >= 0 && (!S.clockSynced || rtt < S.clockRtt * 1.2 || rtt < 50)) {
+        const targetOff = m.b + rtt / 2 - now;
+        if (!S.clockSynced || Math.abs(targetOff - S.clockOff) > 120) S.clockOff = targetOff;
+        else S.clockOff += (targetOff - S.clockOff) * 0.35;
+        S.clockRtt = S.clockSynced ? Math.min(S.clockRtt, rtt) : rtt;
+        S.clockSynced = true;
+      }
+      S.clockRtt *= 1.03;
+      break;
+    }
     case "lob":
       if (from !== hostId()) break;
+      if (!S.clockSynced && m.now != null) { S.clockOff = m.now - performance.now(); S.clockSynced = true; }
       R.gotLob = true; R.cfg = m.cfg; R.points = m.points; R.raceN = m.raceN; R.phase = m.phase;
-      if (m.go && (!race || race.demo || race.go.n !== m.go.n) && S.screen !== "results") startRace(m.go);
+      if (m.go) R.go = m.go;
+      if (m.go && (!race || race.demo || race.go.n !== m.go.n || S.screen === "lobby") && S.screen !== "results") startRace(m.go);
       if (S.screen === "lobby") { renderLobby(); startDemo(); }
       break;
-    case "go": if (from === hostId()) { R.go = m; R.phase = "race"; R.cfg = m.cfg; if (m.mode === "race") R.raceN = m.n; startRace(m); } break;
+    case "go":
+      if (from === hostId()) {
+        if (!S.clockSynced && m.now != null) { S.clockOff = m.now - performance.now(); S.clockSynced = true; }
+        clearTimeout(qTimer);
+        R.go = m; R.phase = "race"; R.cfg = m.cfg; if (m.mode === "race") R.raceN = m.n; startRace(m);
+      }
+      break;
     case "s": if (race && !race.demo) for (const a of m.c) { const e = race.byId.get(a[0]); if (e && !owns(e)) pushSnap(e, m.ts, a); } break;
     case "lap": { const e = race?.byId.get(m.id); if (e && !owns(e)) onLap(e, m.lt, m.rt, m.fin, true, m.inv); break; }
     case "hit": { if (!race) break; for (const h of m.h) { const e = race.byId.get(h[0]); if (e && !owns(e)) e.c.dents.push({ lx: h[1], lz: h[2], a: h[3] }); } break; }
@@ -390,12 +433,21 @@ function onMsg(from, m) {
     case "em": if (race) { world.emote(m.id, EMOTES[m.e] || ""); audio.fx("emote"); } break;
     case "tk": { const e = race?.byId.get(m.id); if (e) { e.kind = "b"; e.skill = 0.9; feed(`${esc(e.code)}: autopilot takes over`); } break; }
     case "res": if (from === hostId() && race && !race.demo) showResults(m); break;
-    case "hold": if (from === hostId() && race && !race.demo && race.go.n === m.n) { const q = m.q ?? 0; if (q < (race.holdQ || 0)) break; race.holdQ = q; if (m.on || race.held) applyHold(m.on, m.at); else race.holdSeen = performance.now(); } break;
+    case "hold":
+      if (from === hostId() && race && !race.demo && race.go.n === m.n) {
+        const q = m.q ?? 0;
+        if (race.holdFrom !== from) { race.holdFrom = from; race.holdQ = 0; }
+        if (q < (race.holdQ || 0)) break;
+        race.holdQ = q;
+        if (m.on || race.held) applyHold(m.on, m.at);
+        else race.holdSeen = performance.now();
+      }
+      break;
   }
 }
 
 // ---------- race ----------
-function endRace() { S.race = null; world.clearCars(); world.setRacingLine(null); $("#interval").hidden = true; $("#rc").hidden = true; }
+function endRace() { closeLineup(); clearHold(); S.race = null; world.clearCars(); world.setRacingLine(null); $("#interval").hidden = true; $("#rc").hidden = true; }
 // The backdrop circuit. Rebuilding a circuit takes a moment, so it never runs inside a click: the screen
 // paints first, then it rebuilds (and only the latest request runs).
 let demoTok = 0;
@@ -414,7 +466,7 @@ function owns(e) { return e.id === me.id || (e.kind === "b" && (S.race.demo || i
 
 function startRace(go, demo) {
   endRace();
-  const T = track(go.cfg.track), cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
+  const T = track(go.cfg.track < TRACKS.length ? go.cfg.track : 0), cls = CLASSES[go.cfg.cls] || CLASSES.gt, quali = go.mode === "quali";
   T.v = speedProfile(T, cls);
   if (world.T !== T || world.cls !== cls.id) { world.setTrack(T, T.v); world.cls = cls.id; } else world.resetRace();
   audio.mode = cls.id === "f1" ? "v6" : cls.id === "classic" ? "v8" : "ev";
@@ -423,7 +475,7 @@ function startRace(go, demo) {
   if (quali) race.t0 = go.at + 3500;
   go.grid.forEach((g, i) => {
     const c = makeCar(g.id, cls), pose = quali ? gridPose(T, i * 3) : gridPose(T, i); placeCar(c, pose); c.total = pose.i - T.n; c.dents = [];
-    const e = { ...g, code: codeOf(g.name), c, slot: i, br: null, snaps: [], lapStart: 0, lapTimes: [], valid: [], best: null, lapsDone: 0, fin: false, finT: null, pos: i + 1, px: c.x, pz: c.z, ph: c.h, lastSeen: performance.now(), delay: 110, gapAvg: 50, secT: 0, sec: 0, rec: [], prof: [], recT: 0, pen: 0, tlN: 0, inv: false, wasTl: false, rel: {}, drsArm: [], prevIdx: c.idx, ret: false, bt: new Map(), bk: null, grid: i + 1, ovt: 0, top: 0 };
+    const e = { ...g, code: codeOf(g.name), c, slot: i, br: null, snaps: [], lapStart: 0, lapTimes: [], valid: [], best: null, lapsDone: 0, fin: false, finT: null, pos: i + 1, px: c.x, pz: c.z, ph: c.h, lastSeen: performance.now(), delay: 85, gapAvg: 34, jitAvg: 8, lastRecv: 0, secT: 0, sec: 0, rec: [], prof: [], recT: 0, pen: 0, tlN: 0, inv: false, wasTl: false, rel: {}, drsArm: [], prevIdx: c.idx, ret: false, bt: new Map(), bk: null, grid: i + 1, ovt: 0, top: 0 };
     race.cars.push(e); race.byId.set(g.id, e);
     world.addCar(g.id, teamOf(g.team).body, cls.id, { number: g.num, team: teamOf(g.team) });
     if (g.id === me.id) race.mine = e;
@@ -431,13 +483,12 @@ function startRace(go, demo) {
   race.spect = !demo && !race.mine;
   if (race.mine) Object.assign(race.mine.c, { aeroAuto: prefs.aeroAuto, bias: prefs.bias, ers: prefs.ers });
   S.ckUntil = 0; $("#radio").hidden = true;
-  if (!demo && !quali && netNow() < go.at - 800) startIntro(race);
-  if (!demo && race.mine && !prefs.seenControls) toggleHelp(true);
   if (race.mine) loadGhost(race);
   world.snapCamera();
   race.autoBrain = makeBrain(0.92, 0.2); race.jump = false; race.firstThr = null;
   if (!demo) {
     show("race"); $("#towerrows").innerHTML = ""; $("#feed").innerHTML = ""; $("#toasts").innerHTML = ""; $("#spect").hidden = !race.spect; $("#rc").hidden = true; $("#flags").hidden = true;
+    hiddenAt = 0; clearHold();
     for (const el of $("#sectors").children) el.className = "";
     for (const k in hudCache) delete hudCache[k];
     drawMapBase(T);
@@ -445,6 +496,9 @@ function startRace(go, demo) {
     $("#startlights").classList.toggle("on", !quali);
     big(T.def.name.toUpperCase(), quali ? "ONE-SHOT QUALIFYING" : `${race.laps} LAP${race.laps === 1 ? "" : "S"} · ${cls.name.toUpperCase()}`);
     if (race.spect) $("#spect").textContent = "Spectating. You are in the next session. ← → to switch car.";
+    if (!quali && netNow() < go.at - 800) startIntro(race);
+    if (race.mine && !prefs.seenControls) toggleHelp(true);
+    if (!isHost()) sendPing();
   }
 }
 
@@ -465,8 +519,17 @@ function pushSnap(e, ts, a) {
   const s = { ts, x: a[1], z: a[2], h: a[3], vx: a[4], vz: a[5], w: a[6], steer: a[7], fl: a[8], total: a[9], dm: a[10] || 0 };
   const last = e.snaps[e.snaps.length - 1];
   if (last && ts <= last.ts) return;
-  if (last) { e.gapAvg += (Math.min(600, ts - last.ts) - e.gapAvg) * 0.1; e.delay += (clamp(e.gapAvg * 2 + 15, 80, 700) - e.delay) * 0.05; }
-  e.snaps.push(s); if (e.snaps.length > 30) e.snaps.shift();
+  const recv = netNow();
+  if (last && e.lastRecv) {
+    const dtSend = Math.max(1, ts - last.ts), dtRecv = Math.max(0, recv - e.lastRecv);
+    const jit = Math.min(350, Math.abs(dtRecv - dtSend));
+    e.gapAvg += (Math.min(400, dtSend) - e.gapAvg) * 0.12;
+    e.jitAvg += (jit - e.jitAvg) * 0.16;
+    const want = clamp(e.gapAvg * 1.35 + e.jitAvg * 2.0 + 18, 65, 420);
+    e.delay += (want - e.delay) * (want > e.delay ? 0.15 : 0.04);
+  }
+  e.lastRecv = recv;
+  e.snaps.push(s); if (e.snaps.length > 36) e.snaps.shift();
   e.lastSeen = performance.now();
 }
 function applyRemote(e, now) {
@@ -480,8 +543,10 @@ function applyRemote(e, now) {
     c.x = h00 * A.x + h10 * d * A.vx + h01 * B.x + h11 * d * B.vx; c.z = h00 * A.z + h10 * d * A.vz + h01 * B.z + h11 * d * B.vz;
     c.h = A.h + angd(B.h, A.h) * u; c.vx = A.vx + (B.vx - A.vx) * u; c.vz = A.vz + (B.vz - A.vz) * u; c.w = A.w + (B.w - A.w) * u; c.steer = A.steer + (B.steer - A.steer) * u;
   } else {
-    const L = rt < sn[0].ts ? sn[0] : B, ex = clamp((rt - L.ts) / 1000, 0, 0.35);
-    c.x = L.x + L.vx * ex; c.z = L.z + L.vz * ex; c.h = L.h + L.w * ex; c.vx = L.vx; c.vz = L.vz; c.w = L.w; c.steer = L.steer;
+    const L = rt < sn[0].ts ? sn[0] : B, ex = clamp((rt - L.ts) / 1000, 0, 0.25);
+    const fade = Math.max(0.4, 1 - ex * 1.5), dh = L.w * ex * 0.5, cs = Math.cos(dh), sn_ = Math.sin(dh);
+    c.x = L.x + (L.vx * cs - L.vz * sn_) * fade * ex; c.z = L.z + (L.vx * sn_ + L.vz * cs) * fade * ex;
+    c.h = L.h + L.w * ex * fade; c.vx = L.vx; c.vz = L.vz; c.w = L.w; c.steer = L.steer;
   }
   const fl = B.fl, dm = B.dm;
   c.boosting = !!(fl & 1); c.brk = fl & 2 ? 1 : 0; c.drs = !!(fl & 4); c.retired = !!(fl & 8); c.thr = fl & 16 ? 1 : 0; c.slip = fl & 32 ? 0.6 : 0; c.respawned = fl & 64 ? 0.3 : 0; c.surf = fl & 128 ? 2 : 0;
@@ -638,6 +703,7 @@ function simStep(race, now) {
     for (let j = 0; j < all.length; j++) {
       if (i === j) continue; const b = all[j]; if (b.hide) continue;
       const bo = owns(b); if (bo && j < i) continue;
+      if (!bo && b.snaps.length && performance.now() - b.lastSeen > 600) continue;
       const r = green ? collideCars(a.c, b.c, bo, { damage: race.demo ? 0 : dmg }) : null;
       if (!r) continue;
       if (race.demo) { a.c.hits.length = 0; b.c.hits.length = 0; continue; }
@@ -880,6 +946,7 @@ function hostFinish(race, raceT) {
   if (race.quali) over = (humans.length ? humans.every(done) : race.cars.every(done)) || raceT > 330;
   else over = (race.firstFin != null && (humans.length ? humans.every(done) : race.cars.every(done)) && raceT > race.firstFin + 3) || (race.firstFin != null && raceT > race.firstFin + 75);
   if (!over) return;
+  if (race.held) { race.holdQ = (race.holdQ || 0) + 1; applyHold(false, Math.round(netNow())); R.net?.send(holdMsg(race), { reliable: true }); }
   race.ended = true;
   const order = classify(race);
   if (race.quali) {
@@ -952,7 +1019,7 @@ function startIntro(race) {
   pick.sort((a, b) => g.indexOf(a) - g.indexOf(b));
   world.showLineup(pick.map((x) => ({ team: teamOf(x.team), number: x.num })), race.cls.id);
   const tags = pick.map((x) => ({ top: `P${g.indexOf(x) + 1}`, name: x.name + (x.id === me.id ? " (you)" : ""), team: teamOf(x.team).name, color: uiColor(teamOf(x.team)), ink: teamOf(x.team).ink }));
-  const tick = () => { const left = Math.ceil((race.go.at - 800 - netNow()) / 1000); if (left <= 0 || S.race !== race) { closeLineup(); world.snapCamera(); return; } lineupOverlay(race.T.def.name.toUpperCase(), `${race.laps} LAP${race.laps === 1 ? "" : "S"} \u00b7 ${race.cls.name.toUpperCase()} \u00b7 ${race.gp ? "GRAND PRIX RULES" : "CASUAL"}`, tags, "", `Lights out in ${left}`, null); };
+  const tick = () => { const left = Math.ceil((race.go.at - 800 - netNow()) / 1000); if (left <= 0 || left > 15 || S.race !== race) { closeLineup(); world.snapCamera(); return; } lineupOverlay(race.T.def.name.toUpperCase(), `${race.laps} LAP${race.laps === 1 ? "" : "S"} \u00b7 ${race.cls.name.toUpperCase()} \u00b7 ${race.gp ? "GRAND PRIX RULES" : "CASUAL"}`, tags, "", `Lights out in ${left}`, null); };
   tick(); clearInterval(luTimer); luTimer = setInterval(tick, 250);
 }
 const rating = (o, i) => Math.round(clamp(55 + ((o.grid || i + 1) - (i + 1)) * 4 + (o.ovt || 0) * 2 + (o.clean || 0) * 2 + (i === 0 ? 10 : 0) - (o.pen || 0) - (o.ret ? 30 : 0), 10, 99));
@@ -978,9 +1045,10 @@ $("#res-next").onclick = () => {
   if ($("#res-next").textContent === "Start the race" && isHost() && R?.qgrid) { endRace(); startSession("race", R.qgrid); return; }
   // the host's (or solo player's) obvious next step is another race, same settings, straight to the grid
   if (isHost() && R) { endRace(); startSession(R.cfg.quali ? "quali" : "race"); return; }
+  if (!isHost() && R?.phase === "race" && R.go) { endRace(); startRace(R.go); return; }
   endRace(); show("lobby"); renderLobby(); startDemo(true);
 };
-$("#res-lobby").onclick = () => { clearTimeout(qTimer); endRace(); show("lobby"); renderLobby(); startDemo(true); };
+$("#res-lobby").onclick = () => { clearTimeout(qTimer); const R = S.room; if (!isHost() && R?.phase === "race" && R.go) { endRace(); startRace(R.go); return; } endRace(); show("lobby"); renderLobby(); startDemo(true); };
 
 // ---------- main loop ----------
 let last = performance.now(), acc = 0;
@@ -989,19 +1057,30 @@ function frame() { requestAnimationFrame(frame); tick(performance.now(), true); 
 // cars, network, timing) keeps running without drawing, so other players never see the host's cars freeze
 try {
   const wk = new Worker(URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 33)"], { type: "text/javascript" })));
-  wk.onmessage = () => { if (document.hidden && S.race && !S.race.demo) { tick(performance.now(), false); hostHold(); } };
+  wk.onmessage = () => {
+    if (!document.hidden) return;
+    S.room?.net?.bgTick?.();
+    if (S.race && !S.race.demo) {
+      tick(performance.now(), false);
+      hostHold();
+      if (isHost() && S.race.held && !S.race.ended && performance.now() - (S.race.lastHoldSend || 0) > 2000) {
+        S.race.lastHoldSend = performance.now();
+        S.room?.net?.send(holdMsg(S.race), { reliable: true });
+      }
+    }
+  };
 } catch {}
 function netSend(race, now, dt) {
-  // network: my cars at 30 Hz direct (20 Hz when relayed), dents as they happen
+  // network: my cars at 30 Hz direct (relay falls back cleanly in net.js), dents as they happen
   race.sendT -= dt;
   const net = S.room?.net;
   if (net && net.peers.size && !race.held) {
     if (race.outHits.length) { net.send({ t: "hit", h: race.outHits.splice(0) }, { reliable: true }); }
     if (race.sendT <= 0) {
-      race.sendT = net.direct() === net.peers.size ? 1 / 30 : 0.05; const arr = [];
+      race.sendT = Math.max(-0.05, race.sendT) + 1 / 30; const arr = [];
       const q = (v) => Math.round(clamp(v, 0, 1) * 15);
       for (const e of race.cars) if (owns(e) && !e.hide) { const c = e.c, D = c.dmg; arr.push([e.id, +c.x.toFixed(2), +c.z.toFixed(2), +c.h.toFixed(3), +c.vx.toFixed(1), +c.vz.toFixed(1), +c.w.toFixed(2), +c.steer.toFixed(2), (c.boosting ? 1 : 0) | (c.brk > 0.1 ? 2 : 0) | (c.drs ? 4 : 0) | (c.retired ? 8 : 0) | (c.thr > 0.2 ? 16 : 0) | (c.slip > 0.4 ? 32 : 0) | (c.respawned > 0 ? 64 : 0) | (c.surf === 2 ? 128 : 0), c.total, q(D.f) | (q(D.r) << 4) | (q(D.l) << 8) | (q(D.rt) << 12) | (q(D.e) << 16)]); }
-      if (arr.length) net.send({ t: "s", ts: Math.round(now), c: arr });
+      if (arr.length) net.send({ t: "s", ts: Math.round(now - acc * 1000), c: arr });
     }
   } else race.outHits.length = 0;
 }

@@ -123,7 +123,7 @@ export function createWorld(canvas) {
   // ---------- sky + ground ----------
   const skyMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, depthWrite: false });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(3800, 40, 20), skyMat); scene.add(sky);
-  function paintSky(m, id) {
+  function paintSky(m, id, def) {
     skyMat.map?.dispose();
     skyMat.map = canvasTex(2048, 1024, (g, w, h) => {
       const gr = g.createLinearGradient(0, 0, 0, h * 0.5); gr.addColorStop(0, m.top); gr.addColorStop(0.75, m.mid); gr.addColorStop(1, m.low);
@@ -142,7 +142,7 @@ export function createWorld(canvas) {
         g.lineTo(w, h); g.fill();
       }
       g.globalAlpha = 1;
-      if (id === "night") for (let x = 0; x < w; x += rnd(8, 22)) {
+      if (id === "night" && (def?.street || def?.skyline)) for (let x = 0; x < w; x += rnd(8, 22)) {
         const bw = rnd(8, 22), bh = rnd(14, 90); g.fillStyle = "#070b16"; g.fillRect(x, h * 0.5 - bh, bw, bh);
         for (let k = 0; k < bh / 5; k++) if (Math.random() < 0.5) { g.fillStyle = `rgba(255,${rnd(190, 240)},${rnd(130, 200)},${rnd(0.4, 0.95)})`; g.fillRect(x + rnd(1, bw - 3), h * 0.5 - bh + 3 + k * 5, 2, 2); }
       }
@@ -200,7 +200,7 @@ export function createWorld(canvas) {
   const decal = (o) => std({ roughness: 0.9, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, ...o });
   const flat = (w, d, mat, x, z, rot, y) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.set(-Math.PI / 2, 0, -rot); m.position.set(x, y, z); m.receiveShadow = true; return m; };
   const distToTrack = (T, x, z) => T.dist(x, z, 600);
-  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95, imola: 45, zandvoort: 34, cota: 28, hungaroring: 55, barcelona: 48, albertpark: 6, suzuka: 60 };
+  const HILLS = { monza: 22, silverstone: 14, spa: 120, interlagos: 70, redbullring: 95, imola: 45, zandvoort: 34, cota: 28, hungaroring: 55, barcelona: 48, albertpark: 6, suzuka: 60, montreal: 10, bahrain: 8, yasmarina: 6, nurburgring: 85, hockenheim: 10, shanghai: 6, mexico: 12, losail: 6, portimao: 65, mugello: 75, sepang: 35, istanbul: 55, paulricard: 28, magnycours: 18, watkinsglen: 55, indianapolis: 4, kyalami: 45, buenosaires: 8, madrid: 22, jacarepagua: 14, estoril: 35 };
   const hillNoise = (x, z) => Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0053 + 0.4) * 0.6 + Math.sin(x * 0.011 + z * 0.007) * 0.25 + Math.sin(x * 0.023 - z * 0.019 + 2) * 0.1 + 0.55;
   const wallOff = (T, s) => (i) => s * (s > 0 ? T.wp[i] : T.wm[i]);
 
@@ -209,7 +209,7 @@ export function createWorld(canvas) {
     W.T = T; lights = []; flagMats = []; monitorTex = null; monitorCtx = null;
     const G = trackGroup = new THREE.Group(); scene.add(G);
     const id = T.def.mood, m = MOODS[id], street = !!T.def.street; W.mood = m; W.night = id === "night";
-    paintSky(m, id); buildEnv(m, id);
+    paintSky(m, id, T.def); buildEnv(m, id);
     groundMat.map?.dispose(); groundMat.map = grassTex(m, false); groundMat.map.repeat.set(400, 400); groundMat.color.set(street ? 0x2b2d31 : 0xffffff); groundMat.needsUpdate = true;
     if (street) { groundMat.map = null; }
     scene.fog = new THREE.FogExp2(m.fog, m.fogD); renderer.toneMappingExposure = m.exp;
@@ -226,7 +226,7 @@ export function createWorld(canvas) {
     for (const s of [-1, 1]) { const vm = new THREE.Mesh(ribbon(T, 0, T.n, s * T.half, (i) => wallOff(T, s)(i) + s * 0.2, 0.005, T.step / 12), verge); vm.receiveShadow = true; G.add(vm); }
     // kerbs, and run-off (gravel or painted tarmac) on the outside of corners
     const kerbMat = decal({ map: kerbTex, roughness: 0.6, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
-    const runMat = id === "sunset" ? decal({ map: runoffTex, roughness: 0.8, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }) : decal({ map: gravelTex, roughness: 1, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const runMat = (id === "sunset" || T.def.runoff) ? decal({ map: runoffTex, roughness: 0.8, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }) : decal({ map: gravelTex, roughness: 1, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     const tyreRuns = [], turfMat = decal({ map: turfTex, roughness: 0.95, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     let run = -1;
     for (let i = 0; i <= T.n; i++) {
@@ -373,19 +373,37 @@ export function createWorld(canvas) {
         G.add(hull, deck);
       }
       const signs = night ? cells[2].slice(0, 14) : [];
+      if (signs.length) {
+        const sCols = [0x00e5ff, 0xff2d55, 0xffd23f, 0x7c4dff];
+        const sm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), signs.length);
+        signs.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h + 0.5, z), q.identity(), sc.set(w * 0.92, 0.9, d * 0.92)); sm.setMatrixAt(i, mt); sm.setColorAt(i, col.setHex(sCols[i % sCols.length])); });
+        G.add(sm);
+      }
       const water = new THREE.Mesh(new THREE.PlaneGeometry(8000, 4000), std({ color: night ? 0x0a1628 : 0x1d5f86, roughness: 0.08, metalness: 0.8, envMapIntensity: 1.2 })); water.rotation.x = -Math.PI / 2; water.position.set(0, -0.15, T.box.hz + 80 + 2000); G.add(water);
       // street lights along the circuit
       const lp = []; for (let i = 0; i < T.n; i += 18) for (const s of [-1, 1]) lp.push([i, s]);
       const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.14, 9, 6), std({ color: 0x3a3d44, metalness: 0.7, roughness: 0.4 }), lp.length), lamp = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 0.25, 0.5), new THREE.MeshBasicMaterial({ color: 0xfff2d8, toneMapped: false }), lp.length);
-      lp.forEach(([i, s], k) => { const o = wallOff(T, s)(i) + s * 1.6, x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o; mt.makeTranslation(x, 4.5, z); pole.setMatrixAt(k, mt); mt.makeTranslation(x - T.nx[i] * s * 0.7, 9, z - T.nz[i] * s * 0.7); lamp.setMatrixAt(k, mt); });
+      lp.forEach(([i, s], k) => { const o = wallOff(T, s)(i) + s * 1.6, x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o; mt.makeTranslation(x, 4.5 + T.y[i], z); pole.setMatrixAt(k, mt); mt.makeTranslation(x - T.nx[i] * s * 0.7, 9 + T.y[i], z - T.nz[i] * s * 0.7); lamp.setMatrixAt(k, mt); });
       G.add(pole, lamp);
     } else {
-      // a distant city skyline (Interlagos): glass and concrete towers
+      // a distant city skyline (Interlagos, Montreal, Shanghai, Mexico City, etc.): glass and concrete towers
       if (L.buildings.length) {
-        const glass = canvasTex(128, 256, (g, w, h) => { g.fillStyle = "#8fa3b8"; g.fillRect(0, 0, w, h); for (let y = 4; y < h; y += 9) { g.fillStyle = `rgba(30,45,60,${rnd(0.25, 0.5)})`; g.fillRect(0, y, w, 5); } for (let x = 0; x < w; x += 16) { g.fillStyle = "rgba(220,226,232,.5)"; g.fillRect(x, 0, 2, h); } }, { repeat: [2, 8] });
-        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ map: glass, roughness: 0.35, metalness: 0.4, envMapIntensity: 0.8 }), L.buildings.length);
-        L.buildings.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h / 2 + (W.heightAt ? 0 : 0), z), q.identity(), sc.set(w, h, d)); im.setMatrixAt(i, mt); });
+        const night = id === "night";
+        const glass = canvasTex(128, 256, (g, w, h) => {
+          g.fillStyle = night ? "#0d1424" : "#8fa3b8"; g.fillRect(0, 0, w, h);
+          for (let y = 4; y < h; y += 9) { g.fillStyle = night ? `rgba(255,${rnd(200, 240)},${rnd(140, 200)},${rnd(0.45, 0.9)})` : `rgba(30,45,60,${rnd(0.25, 0.5)})`; g.fillRect(0, y, w, 5); }
+          for (let x = 0; x < w; x += 16) { g.fillStyle = night ? "rgba(20,30,45,.7)" : "rgba(220,226,232,.5)"; g.fillRect(x, 0, 2, h); }
+        }, { repeat: [2, 8] });
+        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), std({ map: glass, emissive: night ? 0xffffff : 0x000000, emissiveMap: night ? glass : null, emissiveIntensity: night ? 0.7 : 0, roughness: 0.35, metalness: 0.4, envMapIntensity: 0.8 }), L.buildings.length);
+        L.buildings.forEach(([x, z, w, d, h], i) => { mt.compose(new V3(x, h / 2, z), q.identity(), sc.set(w, h, d)); im.setMatrixAt(i, mt); });
         G.add(im);
+      }
+      // floodlight towers for permanent night circuits (Bahrain, Yas Marina, Losail)
+      if (id === "night") {
+        const lp = []; for (let i = 0; i < T.n; i += 22) for (const s of [-1, 1]) lp.push([i, s]);
+        const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14, 0.22, 13, 6), std({ color: 0x3a3d44, metalness: 0.7, roughness: 0.4 }), lp.length), lamp = new THREE.InstancedMesh(new THREE.BoxGeometry(2.2, 0.4, 0.8), new THREE.MeshBasicMaterial({ color: 0xfff5e0, toneMapped: false }), lp.length);
+        lp.forEach(([i, s], k) => { const o = wallOff(T, s)(i) + s * 2.2, x = T.x[i] + T.nx[i] * o, z = T.z[i] + T.nz[i] * o; mt.makeTranslation(x, 6.5 + T.y[i], z); pole.setMatrixAt(k, mt); mt.makeTranslation(x - T.nx[i] * s * 0.9, 13 + T.y[i], z - T.nz[i] * s * 0.9); lamp.setMatrixAt(k, mt); });
+        G.add(pole, lamp);
       }
       // rolling hills beyond the circuit
       const B = T.box, TW = B.hx * 2 + 2600, TD = B.hz * 2 + 2600, HH = HILLS[T.id] ?? 55;
@@ -413,15 +431,17 @@ export function createWorld(canvas) {
       const terr = new THREE.Mesh(tg, std({ map: tt, roughness: 1, envMapIntensity: 0.12 })); terr.receiveShadow = true; G.add(terr);
       W.heightAt = (x, z) => { const d = distToTrack(T, x, z); return clamp((d - 70) / 220, 0, 1) ** 2 * (hillNoise(x, z) * HH + 8); };
       const pts = L.trees.filter(([x, z]) => !keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr + 8)).map(([x, z, s, r]) => [x, z, W.heightAt(x, z), s, r]);
-      const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), std({ color: 0x5b4030, roughness: 1 }), pts.length);
-      const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2, 1), std({ color: id === "sunset" ? 0x5d7a2f : 0x3d7c36, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
-      const pine = new THREE.InstancedMesh(new THREE.ConeGeometry(3.2, 10, 7), std({ color: 0x2d5a2c, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
-      let nc = 0, np = 0;
-      pts.forEach(([x, z, y, s, r], k) => { mt.compose(new V3(x, y + 2 * s, z), q.identity(), sc.set(s, s, s)); trunk.setMatrixAt(k, mt);
-        if (r < 0.33) { mt.compose(new V3(x, y + 7 * s, z), q.identity(), sc.set(s, s * (1 + r), s)); pine.setMatrixAt(np++, mt); }
-        else { mt.compose(new V3(x, y + 6.4 * s, z), q.setFromEuler(new THREE.Euler(0, rnd(0, 6), 0)), sc.set(s, s * rnd(1.1, 1.6), s)); crown.setMatrixAt(nc, mt); crown.setColorAt(nc++, col.setScalar(rnd(0.75, 1.1))); } });
-      crown.count = nc; pine.count = np;
-      trunk.castShadow = crown.castShadow = pine.castShadow = W.quality > 1; W.treeMeshes = [trunk, crown, pine]; crown.receiveShadow = true; G.add(trunk, crown, pine);
+      if (pts.length) {
+        const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), std({ color: 0x5b4030, roughness: 1 }), pts.length);
+        const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(4.2, 1), std({ color: id === "sunset" ? 0x5d7a2f : 0x3d7c36, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
+        const pine = new THREE.InstancedMesh(new THREE.ConeGeometry(3.2, 10, 7), std({ color: 0x2d5a2c, roughness: 1, flatShading: true, envMapIntensity: 0.2 }), pts.length);
+        let nc = 0, np = 0;
+        pts.forEach(([x, z, y, s, r], k) => { mt.compose(new V3(x, y + 2 * s, z), q.identity(), sc.set(s, s, s)); trunk.setMatrixAt(k, mt);
+          if (r < 0.33) { mt.compose(new V3(x, y + 7 * s, z), q.identity(), sc.set(s, s * (1 + r), s)); pine.setMatrixAt(np++, mt); }
+          else { mt.compose(new V3(x, y + 6.4 * s, z), q.setFromEuler(new THREE.Euler(0, rnd(0, 6), 0)), sc.set(s, s * rnd(1.1, 1.6), s)); crown.setMatrixAt(nc, mt); crown.setColorAt(nc++, col.setScalar(rnd(0.75, 1.1))); } });
+        crown.count = nc; pine.count = np;
+        trunk.castShadow = crown.castShadow = pine.castShadow = W.quality > 1; W.treeMeshes = [trunk, crown, pine]; crown.receiveShadow = true; G.add(trunk, crown, pine);
+      } else W.treeMeshes = [];
     }
     // TV camera towers at the big corners
     { const scaf = std({ color: 0x9aa0a8, roughness: 0.6, metalness: 0.5 }), camM = std({ color: 0x111316, roughness: 0.4 }); let made = 0, last = -999;

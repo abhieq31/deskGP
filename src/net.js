@@ -12,7 +12,7 @@ const RELAYS = (() => {
   return DEFAULT_RELAYS;
 })();
 const KIND = 21078; // ephemeral: relays pass it on and do not store it, so a wide "since" (for clock skew) replays nothing
-const ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
+const ICE = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export const newRoomCode = () => [...crypto.getRandomValues(new Uint8Array(6))].map((b) => ALPHABET[b % ALPHABET.length]).join("");
@@ -31,7 +31,7 @@ const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 export function createNet(code, me, handlers, opts = {}) {
   const N = { peers: new Map(), relaysUp: 0, closed: false, id: me.id };
-  const seen = new Set(); let seq = 0, secret, pubkey, aes, sockets = new Map(), bc = null;
+  const seen = new Set(), pending = new Map(); let seq = 0, secret, pubkey, aes, sockets = new Map(), bc = null, lastBeat = 0;
   const useRelays = opts.relays !== false, useRtc = opts.rtc !== false && typeof RTCPeerConnection !== "undefined";
   const lastBus = new Map();
 
@@ -85,7 +85,13 @@ export function createNet(code, me, handlers, opts = {}) {
     if (o.tl && !o.tl.includes(me.id)) return;
     const p = touch(o.f, o.hi);
     if (o.hi) { if (o.hi.ask) hello(o.f); return; }
-    if (!p) return;
+    if (!p) {
+      if (o.sdp || o.m) {
+        const q = pending.get(o.f) || [];
+        if (q.length < 16) { q.push({ sdp: o.sdp, m: o.m }); pending.set(o.f, q); }
+      }
+      return;
+    }
     if (o.sdp) return onSdp(p, o.sdp);
     if (o.m) handlers.onMsg?.(o.f, o.m);
   }
@@ -95,47 +101,102 @@ export function createNet(code, me, handlers, opts = {}) {
     let p = N.peers.get(id);
     if (!p) {
       if (!info) { hello(id, true); return null; } // somebody we have not been introduced to: ask them to say hi
-      p = { id, ...info, last: performance.now(), rtc: false, pc: null, u: null, r: null, tries: 0, lastTry: 0 };
+      p = { id, ...info, last: performance.now(), rtcLast: 0, rtc: false, pc: null, u: null, r: null, tries: 0, lastTry: 0 };
       N.peers.set(id, p); handlers.onPeers?.(N);
       hello(id);
+      const q = pending.get(id);
+      if (q) {
+        pending.delete(id);
+        for (const item of q) {
+          if (item.sdp) onSdp(p, item.sdp);
+          if (item.m) handlers.onMsg?.(id, item.m);
+        }
+      }
       if (useRtc && me.id < id) connect(p);
-    } else if (info) { const ch = p.name !== info.name || p.color !== info.color; Object.assign(p, info); if (ch) handlers.onPeers?.(N); }
+    } else if (info) {
+      const ch = p.name !== info.name || p.color !== info.color || p.team !== info.team || p.num !== info.num || p.joined !== info.joined;
+      Object.assign(p, info);
+      if (ch) handlers.onPeers?.(N);
+    }
     p.last = performance.now();
     return p;
   }
   function hello(to, ask) { busOut({ hi: { name: me.name, color: me.color, team: me.team, num: me.num, joined: me.joined, ask: ask || undefined }, to: to || undefined }); }
-  const beat = setInterval(() => {
+  function tickBeat() {
     if (N.closed) return;
-    const now = performance.now(); let allRtc = N.peers.size > 0;
+    const now = performance.now();
+    if (now - lastBeat < 1200) return;
+    lastBeat = now;
+    let allRtc = N.peers.size > 0;
     for (const p of [...N.peers.values()]) {
-      if (now - p.last > 9000) { drop(p); continue; }
-      if (!p.rtc) { allRtc = false; if (useRtc && me.id < p.id && now - p.lastTry > (p.tries < 2 ? 9000 : 30000) && (!p.pc || p.pc.connectionState !== "connecting" || now - p.lastTry > 12000)) connect(p); }
-      else sendRaw(p.u, { k: 1 });
+      if (now - p.last > 18000) { drop(p); continue; }
+      if (p.rtc) {
+        if (now - p.rtcLast > 4000 || p.u?.readyState !== "open" || p.r?.readyState !== "open") {
+          try { p.pc?.close(); } catch {}
+          p.pc = null; p.u = p.r = null; p.rtc = false; p.tries = 0; p.lastTry = 0;
+          handlers.onPeers?.(N);
+        } else sendRaw(p.u, { k: 1 });
+      }
+      if (!p.rtc) {
+        allRtc = false;
+        if (useRtc && me.id < p.id && now - p.lastTry > (p.tries < 3 ? 4500 : 15000) && (!p.pc || p.pc.connectionState !== "connecting" || now - p.lastTry > 9000)) connect(p);
+      }
     }
     N.tick = (N.tick || 0) + 1;
-    if (!allRtc || N.tick % 3 === 0) hello();
-  }, 2500);
-  function drop(p) { try { p.pc?.close(); } catch {} N.peers.delete(p.id); handlers.onPeers?.(N); }
+    if (!allRtc || N.tick % 4 === 0) hello();
+  }
+  const beat = setInterval(tickBeat, 1500);
+  N.bgTick = tickBeat;
+  const onVis = () => { if (!N.closed) hello(); };
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVis);
+  function drop(p) { try { p.pc?.close(); } catch {} pending.delete(p.id); N.peers.delete(p.id); handlers.onPeers?.(N); }
 
   // ---- WebRTC mesh ----
   function makePc(p) {
     try { p.pc?.close(); } catch {}
     const pc = p.pc = new RTCPeerConnection({ iceServers: ICE }); p.rtc = false; p.u = p.r = null;
-    pc.onconnectionstatechange = () => {
+    const checkState = () => {
       if (p.pc !== pc) return;
-      if (["failed", "closed", "disconnected"].includes(pc.connectionState) && p.rtc) { p.rtc = false; handlers.onPeers?.(N); }
+      const cs = pc.connectionState, is = pc.iceConnectionState;
+      if ((["failed", "closed"].includes(cs) || ["failed", "closed"].includes(is)) && p.rtc) {
+        p.rtc = false; handlers.onPeers?.(N);
+      } else if ((cs === "disconnected" || is === "disconnected") && p.rtc && performance.now() - p.rtcLast > 2500) {
+        p.rtc = false; handlers.onPeers?.(N);
+      }
     };
+    pc.onconnectionstatechange = checkState;
+    pc.oniceconnectionstatechange = checkState;
     pc.ondatachannel = (e) => wire(p, pc, e.channel);
     return pc;
   }
   function wire(p, pc, ch) {
-    ch.onopen = () => { if (p.pc !== pc) return; if (ch.label === "u") p.u = ch; else p.r = ch; if (p.u && p.r && !p.rtc) { p.rtc = true; p.tries = 0; handlers.onPeers?.(N); } };
+    ch.onopen = () => {
+      if (p.pc !== pc) return;
+      if (ch.label === "u") p.u = ch; else p.r = ch;
+      if (p.u?.readyState === "open" && p.r?.readyState === "open" && !p.rtc) {
+        p.rtc = true; p.tries = 0; p.rtcLast = performance.now();
+        handlers.onPeers?.(N); handlers.onRtc?.(p);
+      }
+    };
     ch.onclose = () => { if (p.pc === pc && p.rtc) { p.rtc = false; handlers.onPeers?.(N); } };
-    ch.onmessage = (e) => { p.last = performance.now(); let o; try { o = JSON.parse(e.data); } catch { return; } if (o.m) handlers.onMsg?.(p.id, o.m); };
+    ch.onerror = () => { if (p.pc === pc && p.rtc) { p.rtc = false; handlers.onPeers?.(N); } };
+    ch.onmessage = (e) => { const now = performance.now(); p.last = p.rtcLast = now; let o; try { o = JSON.parse(e.data); } catch { return; } if (o.m) handlers.onMsg?.(p.id, o.m); };
   }
   const gathered = (pc) => new Promise((res) => {
     if (pc.iceGatheringState === "complete") return res();
-    const t = setTimeout(res, 1800); pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); res(); } });
+    let done = false, srflxTimer = null;
+    const finish = () => {
+      if (done) return; done = true;
+      clearTimeout(t); clearTimeout(srflxTimer);
+      pc.removeEventListener("icegatheringstatechange", onIce);
+      pc.removeEventListener("icecandidate", onCand);
+      res();
+    };
+    const onIce = () => { if (pc.iceGatheringState === "complete") finish(); };
+    const onCand = (e) => { if (e.candidate?.candidate?.includes("srflx") && !srflxTimer) srflxTimer = setTimeout(finish, 220); };
+    const t = setTimeout(finish, 1100);
+    pc.addEventListener("icegatheringstatechange", onIce);
+    pc.addEventListener("icecandidate", onCand);
   });
   async function connect(p) {
     p.tries++; p.lastTry = performance.now();
@@ -157,26 +218,27 @@ export function createNet(code, me, handlers, opts = {}) {
       } else if (p.pc && p.pc.signalingState === "have-local-offer") await p.pc.setRemoteDescription(sdp);
     } catch {}
   }
-  function sendRaw(ch, o) { try { if (ch && ch.readyState === "open" && ch.bufferedAmount < 262144) ch.send(JSON.stringify(o)); } catch {} }
+  function sendRaw(ch, o) { try { if (ch && ch.readyState === "open" && ch.bufferedAmount < 262144) { ch.send(JSON.stringify(o)); return true; } } catch {} return false; }
 
   // ---- public ----
   // send(msg, {to, reliable}): direct where possible, relayed otherwise. Unreliable relayed messages are rate-limited per type.
   N.send = function (m, o = {}) {
     if (N.closed) return;
     const targets = o.to ? [N.peers.get(o.to)].filter(Boolean) : [...N.peers.values()], viaBus = [];
-    for (const p of targets) { if (p.rtc) sendRaw(o.reliable ? p.r : p.u, { m }); else viaBus.push(p.id); }
+    for (const p of targets) { if (p.rtc && sendRaw(o.reliable ? p.r : p.u, { m })) continue; viaBus.push(p.id); }
     if (!viaBus.length) return;
-    if (!o.reliable) { const now = performance.now(), key = m.t; if (now - (lastBus.get(key) || 0) < 240) return; lastBus.set(key, now); }
+    if (!o.reliable) { const now = performance.now(), key = m.t; if (now - (lastBus.get(key) || 0) < 115) return; lastBus.set(key, now); }
     busOut(o.to ? { to: o.to, m } : { tl: viaBus, m });
   };
   N.direct = () => { let n = 0; for (const p of N.peers.values()) if (p.rtc) n++; return n; };
   N.setInfo = (info) => { Object.assign(me, info); hello(); };
   N.close = function () {
     N.closed = true; clearInterval(beat);
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVis);
     for (const p of N.peers.values()) try { p.pc?.close(); } catch {}
     for (const ws of sockets.values()) { ws.onclose = null; try { ws.close(); } catch {} }
     try { bc?.close(); } catch {}
-    sockets.clear(); N.peers.clear();
+    sockets.clear(); N.peers.clear(); pending.clear();
   };
 
   try { if (typeof BroadcastChannel !== "undefined" && opts.local !== false) { bc = new BroadcastChannel(`deskgp:${code}`); bc.onmessage = (e) => busIn(e.data); } } catch {}
